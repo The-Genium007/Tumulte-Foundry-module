@@ -20,9 +20,27 @@ class GenericAdapter {
     const speaker = message.speaker
     const actor = game.actors?.get(speaker?.actor)
 
+    Logger.info('Extracting roll data (GenericAdapter)', {
+      speaker,
+      actorName: actor?.name,
+      actorId: actor?.id,
+      flavor: message.flavor,
+      rollOptions: roll.options
+    })
+
     const diceResults = this.extractDiceResults(roll)
     const isCritical = this.detectCritical(roll)
     const criticalType = isCritical ? this.detectCriticalType(roll) : null
+    const rollType = this.detectRollType(roll, message)
+
+    Logger.info('Roll analysis complete', {
+      diceResults,
+      isCritical,
+      criticalType,
+      rollType,
+      formula: roll.formula,
+      total: roll.total
+    })
 
     return {
       characterId: actor?.id || speaker?.actor || 'unknown',
@@ -34,7 +52,7 @@ class GenericAdapter {
       isCritical,
       criticalType,
       isHidden: message.whisper?.length > 0,
-      rollType: this.detectRollType(roll, message),
+      rollType,
       metadata: {
         foundryMessageId: message.id,
         foundryActorId: actor?.id,
@@ -153,6 +171,12 @@ class Dnd5eAdapter extends GenericAdapter {
 
   detectRollType(roll, message) {
     const flavor = (message.flavor || '').toLowerCase()
+
+    Logger.info('D&D 5e detectRollType', {
+      flavor: message.flavor,
+      flavorLower: flavor,
+      rollOptions: roll.options
+    })
 
     // D&D 5e specific roll types
     if (flavor.includes('attack roll')) return 'attack'

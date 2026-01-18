@@ -75,16 +75,34 @@ export class DiceCollector {
    * Handle new chat messages
    */
   async onChatMessage(message, options, userId) {
+    Logger.info('Chat message received', {
+      isRoll: message.isRoll,
+      hasRolls: message.rolls?.length > 0,
+      rollCount: message.rolls?.length || 0,
+      flavor: message.flavor,
+      speaker: message.speaker
+    })
+
     // Only process if enabled
-    if (!this.enabled) return
+    if (!this.enabled) {
+      Logger.debug('Dice collector disabled, skipping')
+      return
+    }
 
     // Only process rolls
-    if (!message.isRoll) return
+    if (!message.isRoll) {
+      Logger.debug('Not a roll message, skipping')
+      return
+    }
 
     // Skip messages without rolls
-    if (!message.rolls || message.rolls.length === 0) return
+    if (!message.rolls || message.rolls.length === 0) {
+      Logger.debug('No rolls in message, skipping')
+      return
+    }
 
     // Process each roll in the message
+    Logger.info(`Processing ${message.rolls.length} roll(s) from message`)
     for (const roll of message.rolls) {
       await this.processRoll(message, roll)
     }
@@ -95,6 +113,18 @@ export class DiceCollector {
    */
   async processRoll(message, roll) {
     try {
+      // Log raw roll object for debugging
+      Logger.info('Raw roll object', {
+        formula: roll.formula,
+        total: roll.total,
+        terms: roll.terms?.map(t => ({
+          class: t.constructor.name,
+          faces: t.faces,
+          results: t.results
+        })),
+        options: roll.options
+      })
+
       // Extract roll data using system adapter
       const rollData = this.systemAdapter.extractRollData(message, roll)
 
@@ -102,20 +132,42 @@ export class DiceCollector {
       rollData.worldId = game.world.id
       rollData.campaignId = game.world.id // Use world ID as campaign ID
 
+      // Log full roll data for debugging
+      Logger.info('Roll data extracted', {
+        characterName: rollData.characterName,
+        characterId: rollData.characterId,
+        formula: rollData.rollFormula,
+        result: rollData.result,
+        rollType: rollData.rollType,
+        isCritical: rollData.isCritical,
+        criticalType: rollData.criticalType,
+        metadata: rollData.metadata
+      })
+
       // Check if we should send this roll
       if (!this.shouldSendRoll(rollData)) {
-        Logger.debug('Roll not sent (filtered)', { formula: rollData.rollFormula })
+        Logger.info('Roll filtered out (not critical, sendAllRolls disabled)', {
+          formula: rollData.rollFormula,
+          isCritical: rollData.isCritical,
+          sendAllRolls: this.sendAllRolls
+        })
         return
       }
 
       // Send to Tumulte via WebSocket
+      Logger.info('Sending dice:roll event to Tumulte', { rollId: rollData.rollId })
       const sent = this.socket.emit('dice:roll', rollData)
 
       if (sent) {
-        Logger.debug('Dice roll sent', {
+        Logger.info('Dice roll sent successfully', {
           formula: rollData.rollFormula,
           result: rollData.result,
-          isCritical: rollData.isCritical
+          isCritical: rollData.isCritical,
+          rollType: rollData.rollType
+        })
+      } else {
+        Logger.warn('Dice roll NOT sent - socket.emit returned false', {
+          isConnected: this.socket?.isConnected?.()
         })
       }
 
