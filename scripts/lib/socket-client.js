@@ -9,11 +9,23 @@ import TokenStorage from './token-storage.js'
 const MODULE_ID = 'tumulte-integration'
 
 export class TumulteSocketClient extends EventTarget {
+  /**
+   * Create a TumulteSocketClient instance
+   * @param {Object} options - Configuration options
+   * @param {string} options.worldId - Required: The Foundry world ID (game.world.id)
+   * @param {string} options.serverUrl - Optional: Tumulte server URL
+   * @param {TokenStorage} options.tokenStorage - Optional: Custom TokenStorage instance
+   */
   constructor(options = {}) {
     super()
 
+    if (!options.worldId) {
+      throw new Error('TumulteSocketClient requires a worldId')
+    }
+
+    this.worldId = options.worldId
     this.serverUrl = options.serverUrl || 'http://localhost:3333'
-    this.tokenStorage = options.tokenStorage || new TokenStorage()
+    this.tokenStorage = options.tokenStorage || new TokenStorage(options.worldId)
 
     this.socket = null
     this.connected = false
@@ -188,6 +200,16 @@ export class TumulteSocketClient extends EventTarget {
   async handleError(error) {
     this.connecting = false
     Logger.error('Connection error', error.message)
+
+    // Check if the campaign was deleted
+    if (error.message.includes('CAMPAIGN_DELETED')) {
+      const reason = error.message.split(':')[1] || 'The campaign no longer exists'
+      Logger.warn('Campaign deleted, clearing tokens', { reason })
+      Logger.notify('The campaign associated with this Foundry world no longer exists on Tumulte. Please connect to a new campaign.', 'error')
+      this.tokenStorage.clearTokens()
+      this.dispatchEvent(new CustomEvent('campaign-deleted', { detail: { reason } }))
+      return
+    }
 
     // Check if it's an auth error that might be fixable by refreshing token
     if (error.message.includes('expired') || error.message.includes('invalid')) {

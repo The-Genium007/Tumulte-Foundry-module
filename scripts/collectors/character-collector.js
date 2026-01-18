@@ -47,34 +47,67 @@ export class CharacterCollector {
       return
     }
 
+    // Log all available actor types for debugging
+    const actorTypes = new Set()
+    game.actors.forEach(actor => actorTypes.add(actor.type))
+    Logger.info('Available actor types in this system', {
+      system: game.system.id,
+      types: Array.from(actorTypes)
+    })
+
     const playerCharacters = game.actors.filter(actor =>
       this.shouldSyncActor(actor)
     )
 
-    Logger.info(`Syncing ${playerCharacters.length} characters...`)
+    Logger.info(`Syncing ${playerCharacters.length} characters...`, {
+      system: game.system.id,
+      totalActors: game.actors.size
+    })
 
     for (const actor of playerCharacters) {
       await this.syncCharacter(actor)
     }
 
-    Logger.info('Character sync complete')
+    Logger.info('Character sync complete', { syncedCount: playerCharacters.length })
   }
 
   /**
    * Determine if an actor should be synced
+   * Supports multiple game systems with different actor type conventions
    */
   shouldSyncActor(actor) {
-    // Sync all actors with type 'character' (PC sheets)
-    // This includes characters not yet assigned to a player
-    if (actor.type === 'character') {
+    // Common PC actor types across different systems
+    const pcTypes = [
+      'character',      // D&D 5e, PF2e, and many others
+      'personnage',     // French systems (Chroniques Oubliées, etc.)
+      'pc',             // Some systems use 'pc' directly
+      'player',         // Alternative naming
+      'protagonist',    // Narrative systems
+      'investigator',   // Call of Cthulhu
+      'traveller',      // Traveller RPG
+      'explorer',       // Some sci-fi systems
+    ]
+
+    // Check if actor type matches any known PC type
+    if (pcTypes.includes(actor.type?.toLowerCase())) {
+      Logger.debug('Actor matches PC type', { name: actor.name, type: actor.type })
+      return true
+    }
+
+    // Sync any actor that has a player owner (regardless of type)
+    // This catches edge cases where the type naming is unusual
+    if (actor.hasPlayerOwner) {
+      Logger.debug('Actor has player owner', { name: actor.name, type: actor.type })
       return true
     }
 
     // Optionally sync NPCs with specific flags
     if (actor.getFlag('tumulte-integration', 'syncToTumulte')) {
+      Logger.debug('Actor has syncToTumulte flag', { name: actor.name, type: actor.type })
       return true
     }
 
+    Logger.debug('Actor not synced', { name: actor.name, type: actor.type, hasPlayerOwner: actor.hasPlayerOwner })
     return false
   }
 
@@ -86,13 +119,17 @@ export class CharacterCollector {
       // Build absolute URL for avatar image
       const avatarUrl = actor.img ? this.buildAbsoluteUrl(actor.img) : null
 
+      // Determine character type based on actor type or player ownership
+      const pcTypes = ['character', 'pc', 'personnage', 'investigator', 'protagonist', 'player']
+      const isPC = pcTypes.includes(actor.type?.toLowerCase()) || actor.hasPlayerOwner
+
       const characterData = {
         worldId: game.world.id,
         campaignId: game.world.id,
         characterId: actor.id,
         name: actor.name,
         avatarUrl,
-        characterType: actor.type === 'character' ? 'pc' : 'npc',
+        characterType: isPC ? 'pc' : 'npc',
         stats: this.systemAdapter.extractStats(actor),
         inventory: this.systemAdapter.extractInventory(actor),
         vttData: {
@@ -101,6 +138,13 @@ export class CharacterCollector {
           flags: actor.flags
         }
       }
+
+      Logger.info('Sending character:update', {
+        characterId: actor.id,
+        name: actor.name,
+        characterType: characterData.characterType,
+        campaignId: characterData.campaignId
+      })
 
       const sent = this.socket.emit('character:update', characterData)
 

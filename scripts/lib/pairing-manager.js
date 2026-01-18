@@ -16,9 +16,21 @@ const MODULE_ID = 'tumulte-integration'
 const POLLING_INTERVAL = 2000 // 2 seconds
 
 export class PairingManager {
+  /**
+   * Create a PairingManager instance
+   * @param {Object} options - Configuration options
+   * @param {string} options.worldId - Required: The Foundry world ID (game.world.id)
+   * @param {string} options.tumulteUrl - Optional: Tumulte server URL
+   * @param {TokenStorage} options.tokenStorage - Optional: Custom TokenStorage instance
+   */
   constructor(options = {}) {
+    if (!options.worldId) {
+      throw new Error('PairingManager requires a worldId')
+    }
+
+    this.worldId = options.worldId
     this.tumulteUrl = options.tumulteUrl || 'http://localhost:3333'
-    this.tokenStorage = options.tokenStorage || new TokenStorage()
+    this.tokenStorage = options.tokenStorage || new TokenStorage(options.worldId)
 
     this.currentPairing = null
     this.pairingTimeout = null

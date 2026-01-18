@@ -94,6 +94,7 @@ export class TumulteConnectionMenu extends FormApplication {
 
   /**
    * Start pairing process
+   * If already paired, this will disconnect first and start a new pairing
    */
   async _onStartPairing() {
     const tumulte = window.tumulte
@@ -103,6 +104,14 @@ export class TumulteConnectionMenu extends FormApplication {
     }
 
     try {
+      // If already paired, disconnect first to start fresh
+      if (tumulte.tokenStorage?.isPaired()) {
+        Logger.info('Already paired, disconnecting before new pairing...')
+        tumulte.disconnect()
+        tumulte.tokenStorage.clearTokens()
+        game.settings.set('tumulte-integration', 'connectionId', '')
+      }
+
       // Register callbacks for pairing completion/expiry
       tumulte.pairingManager.onComplete(async (result) => {
         Logger.info('Pairing completed', result)

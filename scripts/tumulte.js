@@ -27,7 +27,9 @@ const MODULE_VERSION = '2.0.1'
  */
 class TumulteIntegration {
   constructor() {
-    this.tokenStorage = new TokenStorage()
+    // TokenStorage, PairingManager, and SocketClient are initialized in initialize()
+    // because they require game.world.id which is only available after Foundry is ready
+    this.tokenStorage = null
     this.pairingManager = null
     this.socketClient = null
 
@@ -38,6 +40,7 @@ class TumulteIntegration {
 
     // State
     this.initialized = false
+    this.worldId = null
     // Default URL - placeholder is replaced by CI/CD for staging/prod
     // If placeholder is still present, we're in local dev mode
     const configuredUrl = '__TUMULTE_API_URL__'
@@ -50,6 +53,10 @@ class TumulteIntegration {
   async initialize() {
     Logger.info(`Initializing Tumulte Integration v${MODULE_VERSION}`)
 
+    // Get worldId from Foundry (now available since we're in the ready hook)
+    this.worldId = game.world.id
+    Logger.info('World ID', { worldId: this.worldId })
+
     // Register settings
     this.registerSettings()
 
@@ -59,13 +66,18 @@ class TumulteIntegration {
       this.serverUrl = savedUrl
     }
 
-    // Initialize managers
+    // Initialize TokenStorage with worldId for namespaced storage
+    this.tokenStorage = new TokenStorage(this.worldId)
+
+    // Initialize managers with worldId
     this.pairingManager = new PairingManager({
+      worldId: this.worldId,
       tumulteUrl: this.serverUrl,
       tokenStorage: this.tokenStorage
     })
 
     this.socketClient = new TumulteSocketClient({
+      worldId: this.worldId,
       serverUrl: this.serverUrl,
       tokenStorage: this.tokenStorage
     })
@@ -198,6 +210,23 @@ class TumulteIntegration {
 
     this.socketClient.addEventListener('revoked', (event) => {
       ui.notifications.warn(`Connection revoked: ${event.detail.reason}`)
+    })
+
+    this.socketClient.addEventListener('campaign-deleted', () => {
+      // Campaign was deleted on Tumulte, tokens have been cleared
+      // Notify user with a dialog
+      new Dialog({
+        title: 'Campaign No Longer Exists',
+        content: `<p>The campaign associated with this Foundry world has been deleted from Tumulte.</p>
+                  <p>Please open the Tumulte Connection settings to connect to a new campaign.</p>`,
+        buttons: {
+          ok: {
+            icon: '<i class="fas fa-check"></i>',
+            label: 'OK'
+          }
+        },
+        default: 'ok'
+      }).render(true)
     })
 
     // Acknowledgement events
