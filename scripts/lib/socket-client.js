@@ -37,6 +37,14 @@ export class TumulteSocketClient extends EventTarget {
   }
 
   /**
+   * Update server URL (used after pairing provides the URL)
+   */
+  updateServerUrl(url) {
+    this.serverUrl = url
+    Logger.info('Socket client server URL updated', { url })
+  }
+
+  /**
    * Get Socket.IO library
    */
   getIO() {

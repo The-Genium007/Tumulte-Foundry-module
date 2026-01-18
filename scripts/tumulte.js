@@ -19,7 +19,7 @@ import CharacterCollector from './collectors/character-collector.js'
 import CombatCollector from './collectors/combat-collector.js'
 
 const MODULE_ID = 'tumulte-integration'
-const MODULE_VERSION = '2.0.0'
+const MODULE_VERSION = '2.0.1'
 
 /**
  * Main Tumulte Integration Class
@@ -37,7 +37,8 @@ class TumulteIntegration {
 
     // State
     this.initialized = false
-    this.serverUrl = 'http://localhost:3333'
+    // Default URL for initial pairing - will be replaced by server response
+    this.serverUrl = 'https://api.tumulte.tv'
   }
 
   /**
@@ -49,8 +50,11 @@ class TumulteIntegration {
     // Register settings
     this.registerSettings()
 
-    // Load server URL from settings
-    this.serverUrl = game.settings.get(MODULE_ID, 'serverUrl')
+    // Load server URL from settings (may be empty if first pairing)
+    const savedUrl = game.settings.get(MODULE_ID, 'serverUrl')
+    if (savedUrl) {
+      this.serverUrl = savedUrl
+    }
 
     // Initialize managers
     this.pairingManager = new PairingManager({
@@ -88,14 +92,14 @@ class TumulteIntegration {
    * Register module settings
    */
   registerSettings() {
-    // Server URL
+    // Server URL (hidden - auto-injected from pairing)
     game.settings.register(MODULE_ID, 'serverUrl', {
       name: game.i18n.localize('TUMULTE.SettingsServerUrl'),
       hint: game.i18n.localize('TUMULTE.SettingsServerUrlHint'),
       scope: 'world',
-      config: true,
+      config: false, // Hidden - auto-injected from pairing completion
       type: String,
-      default: 'http://localhost:3333',
+      default: '',
       onChange: value => {
         this.serverUrl = value
         Logger.info('Server URL updated', { url: value })
@@ -268,7 +272,13 @@ class TumulteIntegration {
    */
   async completePairing(connectionData) {
     try {
-      await this.pairingManager.completePairing(connectionData)
+      const result = await this.pairingManager.completePairing(connectionData)
+
+      // Update serverUrl if provided by pairing
+      if (result.serverUrl) {
+        this.serverUrl = result.serverUrl
+        this.socketClient.updateServerUrl(result.serverUrl)
+      }
 
       // Store connection ID in settings
       game.settings.set(MODULE_ID, 'connectionId', connectionData.connection.id)

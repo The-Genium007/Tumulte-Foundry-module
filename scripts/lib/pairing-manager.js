@@ -57,7 +57,15 @@ export class PairingManager {
         throw new Error(error.error || `Failed to start pairing: HTTP ${response.status}`)
       }
 
-      const { code, expiresIn, expiresAt } = await response.json()
+      const { code, expiresIn, expiresAt, serverUrl } = await response.json()
+
+      // Store server URL from backend response
+      if (serverUrl) {
+        this.tumulteUrl = serverUrl
+        // Save to Foundry settings for persistence
+        await game.settings.set(MODULE_ID, 'serverUrl', serverUrl)
+        Logger.info('Server URL set from backend', { serverUrl })
+      }
 
       // Store current pairing info
       this.currentPairing = {
@@ -65,6 +73,7 @@ export class PairingManager {
         worldId: game.world.id,
         expiresAt,
         expiresIn,
+        serverUrl: this.tumulteUrl,
         createdAt: Date.now()
       }
 
@@ -74,12 +83,13 @@ export class PairingManager {
       // Start polling for completion
       this.startPolling()
 
-      Logger.info('Pairing session started', { code, expiresIn })
+      Logger.info('Pairing session started', { code, expiresIn, serverUrl: this.tumulteUrl })
 
       return {
         code,
         expiresAt,
-        expiresIn
+        expiresIn,
+        serverUrl: this.tumulteUrl
       }
 
     } catch (error) {
@@ -173,6 +183,13 @@ export class PairingManager {
       // Stop polling
       this.stopPolling()
 
+      // Store server URL if provided (for future connections)
+      if (data.serverUrl) {
+        this.tumulteUrl = data.serverUrl
+        await game.settings.set(MODULE_ID, 'serverUrl', data.serverUrl)
+        Logger.info('Server URL saved from pairing completion', { serverUrl: data.serverUrl })
+      }
+
       // Store tokens
       await this.tokenStorage.storeTokens(
         data.sessionToken,
@@ -194,7 +211,8 @@ export class PairingManager {
       }
 
       Logger.info('Pairing completed successfully', {
-        connectionId: data.connectionId
+        connectionId: data.connectionId,
+        serverUrl: this.tumulteUrl
       })
 
       // Notify callback if registered
@@ -202,11 +220,12 @@ export class PairingManager {
         this.onPairingComplete({
           success: true,
           connectionId: data.connectionId,
-          worldId: completedPairing?.worldId
+          worldId: completedPairing?.worldId,
+          serverUrl: this.tumulteUrl
         })
       }
 
-      return { success: true, connectionId: data.connectionId }
+      return { success: true, connectionId: data.connectionId, serverUrl: this.tumulteUrl }
 
     } catch (error) {
       Logger.error('Failed to complete pairing', error)
