@@ -141,7 +141,12 @@ export class DiceCollector {
         rollType: rollData.rollType,
         isCritical: rollData.isCritical,
         criticalType: rollData.criticalType,
-        metadata: rollData.metadata
+        // Enriched flavor data
+        skill: rollData.skill,
+        skillRaw: rollData.skillRaw,
+        ability: rollData.ability,
+        abilityRaw: rollData.abilityRaw,
+        modifiers: rollData.modifiers
       })
 
       // Check if we should send this roll

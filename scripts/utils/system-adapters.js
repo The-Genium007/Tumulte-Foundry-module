@@ -4,13 +4,29 @@
  */
 
 import Logger from './logger.js'
+import { createFlavorParser } from './flavor-parser.js'
 
 /**
  * Base adapter with generic implementation
  */
 class GenericAdapter {
+  constructor() {
+    this.flavorParser = null
+  }
+
   get systemId() {
     return 'generic'
+  }
+
+  /**
+   * Initialize the adapter (call after game is ready)
+   */
+  initialize() {
+    this.flavorParser = createFlavorParser()
+    Logger.info('System adapter initialized with FlavorParser', {
+      systemId: this.systemId,
+      language: game?.i18n?.lang
+    })
   }
 
   /**
@@ -33,13 +49,21 @@ class GenericAdapter {
     const criticalType = isCritical ? this.detectCriticalType(roll) : null
     const rollType = this.detectRollType(roll, message)
 
+    // Parse flavor text for enriched data
+    const parsedFlavor = this.parseFlavorText(message.flavor)
+
     Logger.info('Roll analysis complete', {
       diceResults,
       isCritical,
       criticalType,
       rollType,
       formula: roll.formula,
-      total: roll.total
+      total: roll.total,
+      parsedFlavor: {
+        skill: parsedFlavor.skill,
+        ability: parsedFlavor.ability,
+        confidence: parsedFlavor.confidence
+      }
     })
 
     return {
@@ -52,15 +76,48 @@ class GenericAdapter {
       isCritical,
       criticalType,
       isHidden: message.whisper?.length > 0,
-      rollType,
+      rollType: parsedFlavor.rollType || rollType, // Prefer parsed roll type
+      // NEW: Enriched flavor data
+      skill: parsedFlavor.skill,
+      skillRaw: parsedFlavor.skillRaw,
+      ability: parsedFlavor.ability,
+      abilityRaw: parsedFlavor.abilityRaw,
+      modifiers: parsedFlavor.modifiers,
       metadata: {
         foundryMessageId: message.id,
         foundryActorId: actor?.id,
         flavor: message.flavor,
         system: game.system.id,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        parsedFlavor: parsedFlavor // Include full parsed data for debugging
       }
     }
+  }
+
+  /**
+   * Parse flavor text using the FlavorParser
+   */
+  parseFlavorText(flavorText) {
+    // Lazy initialization of parser if not already done
+    if (!this.flavorParser) {
+      this.initialize()
+    }
+
+    if (!this.flavorParser) {
+      Logger.warn('FlavorParser not available, returning empty result')
+      return {
+        skill: null,
+        skillRaw: null,
+        ability: null,
+        abilityRaw: null,
+        rollType: null,
+        modifiers: [],
+        rawFlavor: flavorText,
+        confidence: 0
+      }
+    }
+
+    return this.flavorParser.parse(flavorText)
   }
 
   /**
