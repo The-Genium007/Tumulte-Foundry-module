@@ -258,7 +258,7 @@ export class TumulteSocketClient extends EventTarget {
   scheduleReconnect(delay = null) {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       Logger.error('Max reconnection attempts reached')
-      Logger.notify('Unable to reconnect to Tumulte', 'error')
+      Logger.notify('Tumulte service is currently unavailable. Your data will sync when the connection is restored.', 'error')
       this.dispatchEvent(new CustomEvent('reconnect-failed'))
       return
     }
@@ -272,8 +272,11 @@ export class TumulteSocketClient extends EventTarget {
     this.reconnectAttempts++
     Logger.info(`Reconnecting in ${actualDelay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
 
+    // Notify user of reconnection attempt
+    Logger.notify(`Tumulte server unavailable, retrying... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`, 'warn')
+
     this.dispatchEvent(new CustomEvent('reconnecting', {
-      detail: { attempt: this.reconnectAttempts, delay: actualDelay }
+      detail: { attempt: this.reconnectAttempts, delay: actualDelay, maxAttempts: this.maxReconnectAttempts }
     }))
 
     setTimeout(() => {

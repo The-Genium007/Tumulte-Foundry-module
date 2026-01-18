@@ -38,13 +38,23 @@ export class TumulteConnectionMenu extends FormApplication {
     const tumulte = window.tumulte
     const isPaired = tumulte?.tokenStorage?.isPaired() || false
     const isConnected = tumulte?.socketClient?.connected || false
+    const isConnecting = tumulte?.socketClient?.connecting || false
 
     // Get pairing status if currently pairing
     const pairingStatus = tumulte?.pairingManager?.getPairingStatus() || { active: false }
 
+    // Get reconnection status
+    const reconnectAttempts = tumulte?.socketClient?.reconnectAttempts || 0
+    const maxReconnectAttempts = tumulte?.socketClient?.maxReconnectAttempts || 10
+    const isReconnecting = isPaired && !isConnected && reconnectAttempts > 0
+
     return {
       isPaired,
       isConnected,
+      isConnecting,
+      isReconnecting,
+      reconnectAttempts,
+      maxReconnectAttempts,
       isPairing: pairingStatus.active,
       pairingCode: pairingStatus.code || null,
       pairingRemainingSeconds: pairingStatus.remainingSeconds || 0,

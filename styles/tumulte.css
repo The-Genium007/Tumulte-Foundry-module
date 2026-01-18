@@ -624,6 +624,17 @@
   color: var(--tumulte-gray-400);
 }
 
+.tumulte-connection-form .tumulte-status.reconnecting,
+.tumulte-connection-form .tumulte-status.connecting {
+  background: rgba(245, 158, 11, 0.15);
+  color: #b45309;
+}
+
+.tumulte-connection-form .tumulte-status.reconnecting i,
+.tumulte-connection-form .tumulte-status.connecting i {
+  color: var(--tumulte-warning);
+}
+
 /* Connection ID */
 .tumulte-connection-id {
   font-family: 'SF Mono', Monaco, 'Courier New', monospace;

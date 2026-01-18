@@ -7,6 +7,14 @@
         <span class="tumulte-status connected">
           <i class="fas fa-circle"></i> Connected
         </span>
+      {{else if isReconnecting}}
+        <span class="tumulte-status reconnecting">
+          <i class="fas fa-circle-notch fa-spin"></i> Reconnecting... ({{reconnectAttempts}}/{{maxReconnectAttempts}})
+        </span>
+      {{else if isConnecting}}
+        <span class="tumulte-status connecting">
+          <i class="fas fa-circle-notch fa-spin"></i> Connecting...
+        </span>
       {{else if isPaired}}
         <span class="tumulte-status paired">
           <i class="fas fa-circle"></i> Paired (Offline)
