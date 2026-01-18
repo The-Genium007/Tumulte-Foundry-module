@@ -31,6 +31,40 @@ export class CombatCollector {
     Hooks.on('updateCombatant', this.onCombatantUpdate.bind(this))
 
     Logger.info('Combat Collector initialized')
+
+    // Sync active combat if one exists (game is already ready when this is called)
+    this.syncActiveCombat()
+  }
+
+  /**
+   * Sync active combat if one is in progress
+   */
+  syncActiveCombat() {
+    const combat = game.combat
+
+    if (!combat || !combat.active) {
+      Logger.debug('No active combat to sync')
+      return
+    }
+
+    Logger.info('Syncing active combat', {
+      id: combat.id,
+      round: combat.round,
+      turn: combat.turn
+    })
+
+    this.activeCombat = combat.id
+
+    // Send current combat state
+    this.socket.emit('combat:sync', {
+      worldId: game.world.id,
+      combatId: combat.id,
+      round: combat.round,
+      turn: combat.turn,
+      combatants: this.extractCombatants(combat),
+      currentCombatant: combat.combatant ? this.extractCombatantData(combat.combatant) : null,
+      timestamp: Date.now()
+    })
   }
 
   /**

@@ -1,0 +1,82 @@
+<form class="tumulte-connection-form">
+  {{!-- Connection Status --}}
+  <div class="form-group tumulte-status-group">
+    <label>Status</label>
+    <div class="form-fields">
+      {{#if isConnected}}
+        <span class="tumulte-status connected">
+          <i class="fas fa-circle"></i> Connected
+        </span>
+      {{else if isPaired}}
+        <span class="tumulte-status paired">
+          <i class="fas fa-circle"></i> Paired (Offline)
+        </span>
+      {{else}}
+        <span class="tumulte-status disconnected">
+          <i class="fas fa-circle"></i> Not Connected
+        </span>
+      {{/if}}
+    </div>
+  </div>
+
+  {{!-- Connection ID (if paired) --}}
+  {{#if connectionId}}
+  <div class="form-group">
+    <label>Connection ID</label>
+    <div class="form-fields">
+      <code class="tumulte-connection-id">{{connectionId}}</code>
+    </div>
+  </div>
+  {{/if}}
+
+  {{!-- Pairing Section --}}
+  {{#if isPairing}}
+  <div class="tumulte-pairing-section">
+    <div class="form-group">
+      <label>Pairing Code</label>
+      <div class="form-fields tumulte-code-display">
+        <code class="tumulte-pairing-code">{{pairingCode}}</code>
+        <button type="button" class="tumulte-copy-code" title="Copy Code">
+          <i class="fas fa-copy"></i>
+        </button>
+      </div>
+    </div>
+
+    <p class="tumulte-instructions">
+      Enter this code on the Tumulte dashboard to connect Foundry VTT.
+    </p>
+
+    <div class="form-group">
+      <label>Expires in</label>
+      <div class="form-fields">
+        <span class="tumulte-countdown">{{pairingRemainingSeconds}}s</span>
+      </div>
+    </div>
+
+    <div class="form-group tumulte-actions">
+      <button type="button" class="tumulte-cancel-pairing">
+        <i class="fas fa-times"></i> Cancel
+      </button>
+    </div>
+  </div>
+  {{else}}
+  {{!-- Action Buttons --}}
+  <div class="form-group tumulte-actions">
+    {{#if isPaired}}
+      {{#unless isConnected}}
+      <button type="button" class="tumulte-reconnect">
+        <i class="fas fa-plug"></i> Reconnect
+      </button>
+      {{/unless}}
+
+      <button type="button" class="tumulte-disconnect">
+        <i class="fas fa-unlink"></i> Disconnect
+      </button>
+    {{else}}
+      <button type="button" class="tumulte-start-pairing">
+        <i class="fas fa-link"></i> Connect to Tumulte
+      </button>
+    {{/if}}
+  </div>
+  {{/if}}
+</form>

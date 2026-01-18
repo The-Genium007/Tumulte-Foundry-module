@@ -152,34 +152,6 @@ export class DiceCollector {
     this.sendAllRolls = value
     Logger.debug('sendAllRolls setting updated', { value })
   }
-
-  /**
-   * Manually send a test roll
-   */
-  async sendTestRoll() {
-    const testData = {
-      worldId: game.world.id,
-      campaignId: game.world.id,
-      characterId: 'test-character',
-      characterName: 'Test Character',
-      rollId: `test-${Date.now()}`,
-      rollFormula: '1d20+5',
-      result: 17,
-      diceResults: [12],
-      isCritical: false,
-      criticalType: null,
-      isHidden: false,
-      rollType: 'test',
-      metadata: {
-        isTest: true,
-        timestamp: Date.now()
-      }
-    }
-
-    const sent = this.socket.emit('dice:roll', testData)
-    Logger.info('Test roll sent', { sent })
-    return sent
-  }
 }
 
 export default DiceCollector

@@ -560,3 +560,182 @@
 .dark-theme .tumulte-toast-message {
   color: rgba(255, 255, 255, 0.9);
 }
+
+/* ==================================
+   Connection Menu (FormApplication)
+   ================================== */
+.tumulte-connection-menu {
+  min-width: 380px;
+}
+
+.tumulte-connection-form {
+  padding: 8px;
+}
+
+.tumulte-connection-form .form-group {
+  margin-bottom: 12px;
+}
+
+.tumulte-connection-form .form-group label {
+  font-weight: 600;
+  color: var(--tumulte-gray-700);
+}
+
+/* Status display in connection menu */
+.tumulte-status-group .form-fields {
+  display: flex;
+  align-items: center;
+}
+
+.tumulte-connection-form .tumulte-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.tumulte-connection-form .tumulte-status.connected {
+  background: rgba(34, 197, 94, 0.15);
+  color: #16a34a;
+}
+
+.tumulte-connection-form .tumulte-status.connected i {
+  color: var(--tumulte-success);
+}
+
+.tumulte-connection-form .tumulte-status.paired {
+  background: rgba(99, 102, 241, 0.15);
+  color: #4f46e5;
+}
+
+.tumulte-connection-form .tumulte-status.paired i {
+  color: var(--tumulte-primary);
+}
+
+.tumulte-connection-form .tumulte-status.disconnected {
+  background: rgba(107, 114, 128, 0.15);
+  color: var(--tumulte-gray-600);
+}
+
+.tumulte-connection-form .tumulte-status.disconnected i {
+  color: var(--tumulte-gray-400);
+}
+
+/* Connection ID */
+.tumulte-connection-id {
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 11px;
+  padding: 4px 8px;
+  background: var(--tumulte-gray-100);
+  border-radius: var(--tumulte-radius);
+  color: var(--tumulte-gray-600);
+}
+
+/* Pairing section */
+.tumulte-pairing-section {
+  background: rgba(99, 102, 241, 0.05);
+  border: 1px dashed var(--tumulte-primary);
+  border-radius: var(--tumulte-radius-lg);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.tumulte-code-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tumulte-connection-form .tumulte-pairing-code {
+  display: inline-block;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, var(--tumulte-gray-800), var(--tumulte-gray-700));
+  border-radius: var(--tumulte-radius);
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: white;
+  user-select: all;
+  cursor: pointer;
+}
+
+.tumulte-copy-code {
+  padding: 8px 12px;
+  background: var(--tumulte-gray-100);
+  border: 1px solid var(--tumulte-gray-300);
+  border-radius: var(--tumulte-radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tumulte-copy-code:hover {
+  background: var(--tumulte-gray-200);
+}
+
+.tumulte-instructions {
+  margin: 12px 0;
+  font-size: 13px;
+  color: var(--tumulte-gray-600);
+  line-height: 1.5;
+}
+
+.tumulte-countdown {
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tumulte-primary);
+}
+
+/* Action buttons */
+.tumulte-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.tumulte-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--tumulte-radius);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tumulte-start-pairing {
+  background: var(--tumulte-primary);
+  color: white;
+}
+
+.tumulte-start-pairing:hover {
+  background: var(--tumulte-primary-hover);
+}
+
+.tumulte-reconnect {
+  background: var(--tumulte-success);
+  color: white;
+}
+
+.tumulte-reconnect:hover {
+  background: var(--tumulte-success-hover);
+}
+
+.tumulte-disconnect,
+.tumulte-cancel-pairing {
+  background: var(--tumulte-danger);
+  color: white;
+}
+
+.tumulte-disconnect:hover,
+.tumulte-cancel-pairing:hover {
+  background: var(--tumulte-danger-hover);
+}

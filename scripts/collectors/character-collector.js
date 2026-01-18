@@ -21,11 +21,6 @@ export class CharacterCollector {
   initialize() {
     this.systemAdapter = getSystemAdapter()
 
-    // Initial sync when ready
-    Hooks.once('ready', () => {
-      setTimeout(() => this.syncAllCharacters(), 2000)
-    })
-
     // Actor update hooks
     Hooks.on('updateActor', this.onActorUpdate.bind(this))
     Hooks.on('createActor', this.onActorCreate.bind(this))
@@ -37,6 +32,10 @@ export class CharacterCollector {
     Hooks.on('deleteItem', this.onItemChange.bind(this))
 
     Logger.info('Character Collector initialized')
+
+    // Initial sync - game is already ready when this is called
+    // (we're initialized after successful WebSocket connection)
+    setTimeout(() => this.syncAllCharacters(), 2000)
   }
 
   /**
@@ -65,8 +64,9 @@ export class CharacterCollector {
    * Determine if an actor should be synced
    */
   shouldSyncActor(actor) {
-    // Sync player characters
-    if (actor.type === 'character' && actor.hasPlayerOwner) {
+    // Sync all actors with type 'character' (PC sheets)
+    // This includes characters not yet assigned to a player
+    if (actor.type === 'character') {
       return true
     }
 
@@ -83,13 +83,16 @@ export class CharacterCollector {
    */
   async syncCharacter(actor) {
     try {
+      // Build absolute URL for avatar image
+      const avatarUrl = actor.img ? this.buildAbsoluteUrl(actor.img) : null
+
       const characterData = {
         worldId: game.world.id,
         campaignId: game.world.id,
         characterId: actor.id,
         name: actor.name,
-        avatarUrl: actor.img,
-        characterType: actor.hasPlayerOwner ? 'pc' : 'npc',
+        avatarUrl,
+        characterType: actor.type === 'character' ? 'pc' : 'npc',
         stats: this.systemAdapter.extractStats(actor),
         inventory: this.systemAdapter.extractInventory(actor),
         vttData: {
@@ -205,6 +208,24 @@ export class CharacterCollector {
   async resyncAll() {
     this.syncedCharacters.clear()
     await this.syncAllCharacters()
+  }
+
+  /**
+   * Build absolute URL from relative Foundry path
+   * Handles both relative paths and already absolute URLs
+   */
+  buildAbsoluteUrl(path) {
+    if (!path) return null
+
+    // Already an absolute URL
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path
+    }
+
+    // Build absolute URL using Foundry's origin
+    const origin = window.location.origin
+    const cleanPath = path.startsWith('/') ? path : `/${path}`
+    return `${origin}${cleanPath}`
   }
 }
 
