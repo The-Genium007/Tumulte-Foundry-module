@@ -33,9 +33,9 @@
     }
   ],
   "socket": true,
-  "url": "https://github.com/tumulte-app/foundry-integration",
-  "manifest": "https://raw.githubusercontent.com/tumulte-app/foundry-integration/main/module.json",
-  "download": "https://github.com/tumulte-app/foundry-integration/releases/latest/download/tumulte-integration.zip",
+  "url": "https://github.com/The-Genium007/Tumulte-Foundry-module",
+  "manifest": "https://raw.githubusercontent.com/The-Genium007/Tumulte-Foundry-module/main/module.json",
+  "download": "https://github.com/The-Genium007/Tumulte-Foundry-module/releases/latest/download/tumulte-integration.zip",
   "readme": "README.md",
   "changelog": "CHANGELOG.md"
 }
