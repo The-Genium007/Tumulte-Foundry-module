@@ -1,0 +1,752 @@
+/**
+ * Tumulte Integration - Styles v2.0
+ * Modern CSS for Foundry VTT module
+ */
+
+/* ==================================
+   CSS Variables
+   ================================== */
+:root {
+  --tumulte-primary: #6366f1;
+  --tumulte-primary-hover: #4f46e5;
+  --tumulte-success: #22c55e;
+  --tumulte-success-hover: #16a34a;
+  --tumulte-danger: #ef4444;
+  --tumulte-danger-hover: #dc2626;
+  --tumulte-warning: #f59e0b;
+  --tumulte-gray-50: #f9fafb;
+  --tumulte-gray-100: #f3f4f6;
+  --tumulte-gray-200: #e5e7eb;
+  --tumulte-gray-300: #d1d5db;
+  --tumulte-gray-600: #4b5563;
+  --tumulte-gray-700: #374151;
+  --tumulte-gray-800: #1f2937;
+  --tumulte-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --tumulte-shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --tumulte-radius: 6px;
+  --tumulte-radius-lg: 8px;
+}
+
+/* ==================================
+   Base Button Styles
+   ================================== */
+.tumulte-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--tumulte-radius);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.tumulte-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tumulte-btn i {
+  font-size: 14px;
+}
+
+/* Primary Button */
+.tumulte-btn-primary {
+  background: var(--tumulte-primary);
+  color: white;
+}
+
+.tumulte-btn-primary:hover:not(:disabled) {
+  background: var(--tumulte-primary-hover);
+}
+
+/* Success Button */
+.tumulte-btn-success {
+  background: var(--tumulte-success);
+  color: white;
+}
+
+.tumulte-btn-success:hover:not(:disabled) {
+  background: var(--tumulte-success-hover);
+}
+
+/* Danger Button */
+.tumulte-btn-danger {
+  background: var(--tumulte-danger);
+  color: white;
+}
+
+.tumulte-btn-danger:hover:not(:disabled) {
+  background: var(--tumulte-danger-hover);
+}
+
+/* Outline Button */
+.tumulte-btn-outline {
+  background: transparent;
+  color: var(--tumulte-gray-700);
+  border: 1px solid var(--tumulte-gray-300);
+}
+
+.tumulte-btn-outline:hover:not(:disabled) {
+  background: var(--tumulte-gray-100);
+  border-color: var(--tumulte-gray-400);
+}
+
+/* Small Button */
+.tumulte-btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.tumulte-btn-sm i {
+  font-size: 12px;
+}
+
+/* ==================================
+   Settings Page Buttons
+   ================================== */
+#tumulte-pair-button,
+#tumulte-disconnect-button,
+#tumulte-test-connection,
+#tumulte-sync-button {
+  margin-top: 8px;
+}
+
+#tumulte-pair-button {
+  background: var(--tumulte-primary);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: var(--tumulte-radius);
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.15s ease;
+}
+
+#tumulte-pair-button:hover {
+  background: var(--tumulte-primary-hover);
+}
+
+#tumulte-disconnect-button {
+  background: var(--tumulte-danger);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: var(--tumulte-radius);
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.15s ease;
+}
+
+#tumulte-disconnect-button:hover {
+  background: var(--tumulte-danger-hover);
+}
+
+#tumulte-test-connection {
+  background: var(--tumulte-success);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: var(--tumulte-radius);
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.15s ease;
+}
+
+#tumulte-test-connection:hover {
+  background: var(--tumulte-success-hover);
+}
+
+#tumulte-test-connection:active {
+  background: #15803d;
+}
+
+#tumulte-test-connection i,
+#tumulte-pair-button i,
+#tumulte-disconnect-button i {
+  margin-right: 6px;
+}
+
+/* ==================================
+   Connection Status Indicator
+   ================================== */
+.tumulte-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.tumulte-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  animation: tumulte-pulse 2s ease-in-out infinite;
+}
+
+.tumulte-status-connected {
+  background: rgba(34, 197, 94, 0.1);
+  color: #16a34a;
+}
+
+.tumulte-status-connected .tumulte-status-dot {
+  background: var(--tumulte-success);
+}
+
+.tumulte-status-connecting {
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
+}
+
+.tumulte-status-connecting .tumulte-status-dot {
+  background: var(--tumulte-warning);
+  animation: tumulte-blink 1s ease-in-out infinite;
+}
+
+.tumulte-status-disconnected {
+  background: rgba(107, 114, 128, 0.1);
+  color: var(--tumulte-gray-600);
+}
+
+.tumulte-status-disconnected .tumulte-status-dot {
+  background: var(--tumulte-gray-300);
+  animation: none;
+}
+
+.tumulte-status-error {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+}
+
+.tumulte-status-error .tumulte-status-dot {
+  background: var(--tumulte-danger);
+}
+
+@keyframes tumulte-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes tumulte-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ==================================
+   Pairing Dialog
+   ================================== */
+.tumulte-pairing-dialog {
+  padding: 20px;
+}
+
+.tumulte-pairing-dialog h3 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--tumulte-gray-800);
+}
+
+.tumulte-pairing-instructions {
+  margin-bottom: 20px;
+  padding: 16px;
+  background: var(--tumulte-gray-50);
+  border-radius: var(--tumulte-radius-lg);
+  border: 1px solid var(--tumulte-gray-200);
+}
+
+.tumulte-pairing-instructions p {
+  margin: 0 0 12px 0;
+  font-weight: 500;
+  color: var(--tumulte-gray-700);
+}
+
+.tumulte-pairing-instructions ol {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--tumulte-gray-600);
+}
+
+.tumulte-pairing-instructions li {
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+
+/* Pairing Code Display */
+.tumulte-pairing-code-container {
+  margin: 20px 0;
+  text-align: center;
+}
+
+.tumulte-pairing-code-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--tumulte-gray-600);
+}
+
+.tumulte-pairing-code {
+  display: inline-block;
+  padding: 16px 32px;
+  background: linear-gradient(135deg, var(--tumulte-gray-800), var(--tumulte-gray-700));
+  border-radius: var(--tumulte-radius-lg);
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: white;
+  user-select: all;
+  cursor: pointer;
+  box-shadow: var(--tumulte-shadow-lg);
+  transition: transform 0.15s ease;
+}
+
+.tumulte-pairing-code:hover {
+  transform: scale(1.02);
+}
+
+.tumulte-copy-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 8px 16px;
+  background: var(--tumulte-primary);
+  color: white;
+  border: none;
+  border-radius: var(--tumulte-radius);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.tumulte-copy-button:hover {
+  background: var(--tumulte-primary-hover);
+}
+
+.tumulte-copy-success {
+  color: var(--tumulte-success);
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+/* Waiting State */
+.tumulte-pairing-waiting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 24px 0;
+  padding: 16px;
+  background: rgba(99, 102, 241, 0.05);
+  border-radius: var(--tumulte-radius-lg);
+  border: 1px dashed var(--tumulte-primary);
+}
+
+.tumulte-pairing-waiting-text {
+  color: var(--tumulte-primary);
+  font-weight: 500;
+}
+
+/* Spinner */
+.tumulte-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--tumulte-gray-200);
+  border-top-color: var(--tumulte-primary);
+  border-radius: 50%;
+  animation: tumulte-spin 0.8s linear infinite;
+}
+
+@keyframes tumulte-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Dialog Actions */
+.tumulte-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--tumulte-gray-200);
+}
+
+/* ==================================
+   Settings Panel
+   ================================== */
+.tumulte-settings-panel {
+  margin: 16px 0;
+  padding: 16px;
+  background: var(--tumulte-gray-50);
+  border-radius: var(--tumulte-radius-lg);
+  border: 1px solid var(--tumulte-gray-200);
+}
+
+.tumulte-settings-panel h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tumulte-gray-700);
+}
+
+.tumulte-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+
+.tumulte-settings-row:not(:last-child) {
+  border-bottom: 1px solid var(--tumulte-gray-200);
+}
+
+.tumulte-settings-label {
+  font-size: 13px;
+  color: var(--tumulte-gray-600);
+}
+
+.tumulte-settings-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--tumulte-gray-800);
+}
+
+/* ==================================
+   Notification Toasts
+   ================================== */
+.tumulte-toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: white;
+  border-radius: var(--tumulte-radius-lg);
+  box-shadow: var(--tumulte-shadow-lg);
+  border-left: 4px solid;
+  z-index: 10000;
+  animation: tumulte-slide-in 0.3s ease;
+}
+
+.tumulte-toast-success {
+  border-left-color: var(--tumulte-success);
+}
+
+.tumulte-toast-error {
+  border-left-color: var(--tumulte-danger);
+}
+
+.tumulte-toast-warning {
+  border-left-color: var(--tumulte-warning);
+}
+
+.tumulte-toast-info {
+  border-left-color: var(--tumulte-primary);
+}
+
+.tumulte-toast-icon {
+  font-size: 18px;
+}
+
+.tumulte-toast-success .tumulte-toast-icon {
+  color: var(--tumulte-success);
+}
+
+.tumulte-toast-error .tumulte-toast-icon {
+  color: var(--tumulte-danger);
+}
+
+.tumulte-toast-message {
+  font-size: 14px;
+  color: var(--tumulte-gray-700);
+}
+
+@keyframes tumulte-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* ==================================
+   Scene Controls Button
+   ================================== */
+#controls .tumulte-control-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#controls .tumulte-control-icon.connected i {
+  color: var(--tumulte-success);
+}
+
+#controls .tumulte-control-icon.disconnected i {
+  color: var(--tumulte-gray-400);
+}
+
+#controls .tumulte-control-icon.error i {
+  color: var(--tumulte-danger);
+}
+
+/* ==================================
+   Legacy Support (v1 compatibility)
+   ================================== */
+.tumulte-legacy-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 12px 16px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: var(--tumulte-radius);
+  color: #92400e;
+  font-size: 13px;
+}
+
+.tumulte-legacy-warning i {
+  margin-top: 2px;
+  font-size: 16px;
+  color: var(--tumulte-warning);
+}
+
+/* ==================================
+   Responsive / Foundry Integration
+   ================================== */
+.app.dialog .tumulte-pairing-dialog {
+  max-width: 480px;
+}
+
+/* Override Foundry default button styles */
+.app .tumulte-btn,
+.app #tumulte-pair-button,
+.app #tumulte-disconnect-button,
+.app #tumulte-test-connection {
+  line-height: 1.4;
+}
+
+/* Dark mode support (Foundry themes) */
+.dark-theme .tumulte-pairing-instructions,
+.dark-theme .tumulte-settings-panel {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark-theme .tumulte-pairing-instructions p,
+.dark-theme .tumulte-settings-label {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.dark-theme .tumulte-toast {
+  background: var(--tumulte-gray-800);
+}
+
+.dark-theme .tumulte-toast-message {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* ==================================
+   Connection Menu (FormApplication)
+   ================================== */
+.tumulte-connection-menu {
+  min-width: 380px;
+}
+
+.tumulte-connection-form {
+  padding: 8px;
+}
+
+.tumulte-connection-form .form-group {
+  margin-bottom: 12px;
+}
+
+.tumulte-connection-form .form-group label {
+  font-weight: 600;
+  color: var(--tumulte-gray-700);
+}
+
+/* Status display in connection menu */
+.tumulte-status-group .form-fields {
+  display: flex;
+  align-items: center;
+}
+
+.tumulte-connection-form .tumulte-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.tumulte-connection-form .tumulte-status.connected {
+  background: rgba(34, 197, 94, 0.15);
+  color: #16a34a;
+}
+
+.tumulte-connection-form .tumulte-status.connected i {
+  color: var(--tumulte-success);
+}
+
+.tumulte-connection-form .tumulte-status.paired {
+  background: rgba(99, 102, 241, 0.15);
+  color: #4f46e5;
+}
+
+.tumulte-connection-form .tumulte-status.paired i {
+  color: var(--tumulte-primary);
+}
+
+.tumulte-connection-form .tumulte-status.disconnected {
+  background: rgba(107, 114, 128, 0.15);
+  color: var(--tumulte-gray-600);
+}
+
+.tumulte-connection-form .tumulte-status.disconnected i {
+  color: var(--tumulte-gray-400);
+}
+
+.tumulte-connection-form .tumulte-status.reconnecting,
+.tumulte-connection-form .tumulte-status.connecting {
+  background: rgba(245, 158, 11, 0.15);
+  color: #b45309;
+}
+
+.tumulte-connection-form .tumulte-status.reconnecting i,
+.tumulte-connection-form .tumulte-status.connecting i {
+  color: var(--tumulte-warning);
+}
+
+/* Connection ID */
+.tumulte-connection-id {
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 11px;
+  padding: 4px 8px;
+  background: var(--tumulte-gray-100);
+  border-radius: var(--tumulte-radius);
+  color: var(--tumulte-gray-600);
+}
+
+/* Pairing section */
+.tumulte-pairing-section {
+  background: rgba(99, 102, 241, 0.05);
+  border: 1px dashed var(--tumulte-primary);
+  border-radius: var(--tumulte-radius-lg);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.tumulte-code-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tumulte-connection-form .tumulte-pairing-code {
+  display: inline-block;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, var(--tumulte-gray-800), var(--tumulte-gray-700));
+  border-radius: var(--tumulte-radius);
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: white;
+  user-select: all;
+  cursor: pointer;
+}
+
+.tumulte-copy-code {
+  padding: 8px 12px;
+  background: var(--tumulte-gray-100);
+  border: 1px solid var(--tumulte-gray-300);
+  border-radius: var(--tumulte-radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tumulte-copy-code:hover {
+  background: var(--tumulte-gray-200);
+}
+
+.tumulte-instructions {
+  margin: 12px 0;
+  font-size: 13px;
+  color: var(--tumulte-gray-600);
+  line-height: 1.5;
+}
+
+.tumulte-countdown {
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tumulte-primary);
+}
+
+/* Action buttons */
+.tumulte-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.tumulte-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--tumulte-radius);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tumulte-start-pairing {
+  background: var(--tumulte-primary);
+  color: white;
+}
+
+.tumulte-start-pairing:hover {
+  background: var(--tumulte-primary-hover);
+}
+
+.tumulte-reconnect {
+  background: var(--tumulte-success);
+  color: white;
+}
+
+.tumulte-reconnect:hover {
+  background: var(--tumulte-success-hover);
+}
+
+.tumulte-disconnect,
+.tumulte-cancel-pairing {
+  background: var(--tumulte-danger);
+  color: white;
+}
+
+.tumulte-disconnect:hover,
+.tumulte-cancel-pairing:hover {
+  background: var(--tumulte-danger-hover);
+}

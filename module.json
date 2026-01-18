@@ -1,0 +1,36 @@
+{
+  "id": "tumulte-integration",
+  "title": "Tumulte Integration",
+  "description": "Real-time integration with Tumulte for Twitch TTRPG overlays. Automatically syncs dice rolls, characters, and combat.",
+  "version": "2.0.1",
+  "authors": [
+    {
+      "name": "Tumulte Team",
+      "url": "https://tumulte.app"
+    }
+  ],
+  "compatibility": {
+    "minimum": "11",
+    "verified": "12",
+    "maximum": "13"
+  },
+  "esmodules": [
+    "scripts/tumulte.js"
+  ],
+  "styles": [
+    "styles/tumulte.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    }
+  ],
+  "socket": true,
+  "url": "https://github.com/The-Genium007/Tumulte-Foundry-module",
+  "manifest": "https://raw.githubusercontent.com/The-Genium007/Tumulte-Foundry-module/main/module.json",
+  "download": "https://github.com/The-Genium007/Tumulte-Foundry-module/releases/latest/download/tumulte-integration.zip",
+  "readme": "README.md",
+  "changelog": "CHANGELOG.md"
+}

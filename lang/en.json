@@ -1,0 +1,80 @@
+{
+  "TUMULTE.ModuleTitle": "Tumulte Integration",
+
+  "TUMULTE.SettingsEnabled": "Enable Tumulte Integration",
+  "TUMULTE.SettingsEnabledHint": "Enable sending dice rolls and game data to Tumulte for Twitch overlay display",
+
+  "TUMULTE.SettingsServerUrl": "Tumulte Server URL",
+  "TUMULTE.SettingsServerUrlHint": "URL of your Tumulte server (e.g., https://tumulte.example.com)",
+
+  "TUMULTE.SettingsApiKey": "API Key",
+  "TUMULTE.SettingsApiKeyHint": "API key provided by Tumulte (obtained after pairing)",
+
+  "TUMULTE.SettingsSendAllRolls": "Send All Rolls",
+  "TUMULTE.SettingsSendAllRollsHint": "If enabled, sends all dice rolls. If disabled, only sends critical successes and failures",
+
+  "TUMULTE.SettingsSyncCharacters": "Sync Characters",
+  "TUMULTE.SettingsSyncCharactersHint": "Enable automatic synchronization of character data with Tumulte",
+
+  "TUMULTE.SettingsSyncCombat": "Sync Combat",
+  "TUMULTE.SettingsSyncCombatHint": "Enable combat tracking and turn notifications",
+
+  "TUMULTE.SettingsDebugMode": "Debug Mode",
+  "TUMULTE.SettingsDebugModeHint": "Enable debug logging in the browser console",
+
+  "TUMULTE.ButtonPair": "Pair with Tumulte",
+  "TUMULTE.ButtonDisconnect": "Disconnect",
+  "TUMULTE.ButtonTestConnection": "Test Connection",
+  "TUMULTE.ButtonSyncNow": "Sync Now",
+
+  "TUMULTE.ConnectionStatus": "Connection Status",
+  "TUMULTE.Unpair": "Unpair",
+  "TUMULTE.Reconnect": "Reconnect",
+  "TUMULTE.TestRoll": "Test Roll",
+
+  "TUMULTE.StatusConnected": "Connected",
+  "TUMULTE.StatusConnecting": "Connecting...",
+  "TUMULTE.StatusDisconnected": "Disconnected",
+  "TUMULTE.StatusPaired": "Paired",
+  "TUMULTE.StatusError": "Connection Error",
+  "TUMULTE.StatusPairing": "Pairing...",
+
+  "TUMULTE.PairingDialogTitle": "Pair with Tumulte",
+  "TUMULTE.PairingInstructions": "Enter this code on the Tumulte dashboard to connect Foundry VTT.",
+  "TUMULTE.PairingCode": "Pairing Code",
+  "TUMULTE.PairingUrl": "Connection URL",
+  "TUMULTE.UrlCopied": "URL copied to clipboard!",
+  "TUMULTE.PairingExpires": "Code expires in {seconds} seconds",
+  "TUMULTE.PairingDialogInstructions": "To connect Foundry VTT with Tumulte:",
+  "TUMULTE.PairingDialogStep1": "1. Go to your Tumulte dashboard",
+  "TUMULTE.PairingDialogStep2": "2. Navigate to VTT Connections",
+  "TUMULTE.PairingDialogStep3": "3. Click 'Add Foundry Connection'",
+  "TUMULTE.PairingDialogStep4": "4. Enter the pairing code below",
+  "TUMULTE.PairingDialogCodeLabel": "Your Pairing Code:",
+  "TUMULTE.PairingDialogCopyCode": "Copy Code",
+  "TUMULTE.PairingDialogCodeCopied": "Code copied to clipboard!",
+  "TUMULTE.PairingDialogWaiting": "Waiting for connection approval...",
+  "TUMULTE.PairingDialogCancel": "Cancel",
+
+  "TUMULTE.NotificationPairingSuccess": "Successfully paired with Tumulte!",
+  "TUMULTE.NotificationPairingFailed": "Pairing failed. Please try again.",
+  "TUMULTE.NotificationPairingTimeout": "Pairing timed out. Please try again.",
+  "TUMULTE.NotificationConnected": "Connected to Tumulte",
+  "TUMULTE.NotificationDisconnected": "Disconnected from Tumulte",
+  "TUMULTE.NotificationReconnecting": "Reconnecting to Tumulte...",
+  "TUMULTE.NotificationConnectionError": "Failed to connect to Tumulte",
+  "TUMULTE.NotificationSyncSuccess": "Data synchronized with Tumulte",
+  "TUMULTE.NotificationSyncFailed": "Failed to sync data with Tumulte",
+  "TUMULTE.NotificationTokenExpired": "Session expired. Please reconnect.",
+
+  "TUMULTE.ConfirmDisconnect": "Are you sure you want to disconnect from Tumulte?",
+  "TUMULTE.ConfirmDisconnectTitle": "Disconnect from Tumulte",
+
+  "TUMULTE.ErrorNotGM": "Only the Game Master can configure Tumulte integration",
+  "TUMULTE.ErrorNotConfigured": "Tumulte integration is not configured. Please pair with Tumulte first.",
+  "TUMULTE.ErrorServerUnreachable": "Cannot reach Tumulte server. Please check your connection.",
+
+  "TUMULTE.LegacyWarning": "Legacy webhook mode detected. Consider upgrading to secure WebSocket connection.",
+  "TUMULTE.LegacyWebhookUrl": "Webhook URL (Legacy)",
+  "TUMULTE.LegacyWebhookUrlHint": "Legacy webhook endpoint URL (deprecated, use WebSocket pairing instead)"
+}
