@@ -218,14 +218,22 @@ class TumulteIntegration {
       new Dialog({
         title: 'Campaign No Longer Exists',
         content: `<p>The campaign associated with this Foundry world has been deleted from Tumulte.</p>
-                  <p>Please open the Tumulte Connection settings to connect to a new campaign.</p>`,
+                  <p>Please connect to a new campaign.</p>`,
         buttons: {
+          connect: {
+            icon: '<i class="fas fa-link"></i>',
+            label: 'Connect',
+            callback: () => {
+              // Open the connection menu
+              new TumulteConnectionMenu().render(true)
+            }
+          },
           ok: {
             icon: '<i class="fas fa-check"></i>',
             label: 'OK'
           }
         },
-        default: 'ok'
+        default: 'connect'
       }).render(true)
     })
 
