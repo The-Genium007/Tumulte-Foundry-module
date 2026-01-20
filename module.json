@@ -1,8 +1,8 @@
 {
   "id": "tumulte-integration",
-  "title": "Tumulte - Twitch Integration",
-  "description": "Intégration temps réel avec Tumulte pour les overlays Twitch de JDR. Synchronise automatiquement les lancés de dés, personnages et combats.",
-  "version": "2.0.0",
+  "title": "Tumulte Integration",
+  "description": "Real-time integration with Tumulte for Twitch TTRPG overlays. Automatically syncs dice rolls, characters, and combat.",
+  "version": "2.0.1",
   "authors": [
     {
       "name": "Tumulte Team",
@@ -25,11 +25,6 @@
       "lang": "en",
       "name": "English",
       "path": "lang/en.json"
-    },
-    {
-      "lang": "fr",
-      "name": "Français",
-      "path": "lang/fr.json"
     }
   ],
   "socket": true,

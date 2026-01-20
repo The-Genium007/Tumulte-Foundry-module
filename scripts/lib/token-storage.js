@@ -1,20 +1,37 @@
 /**
  * Token Storage for Tumulte VTT Connection
  * Handles secure storage and retrieval of JWT tokens in Foundry VTT
+ *
+ * IMPORTANT: Tokens are namespaced by worldId to support multiple worlds
+ * Each Foundry world has its own isolated token storage
  */
 
 import Logger from '../utils/logger.js'
 
 const STORAGE_PREFIX = 'tumulte_'
-const SESSION_TOKEN_KEY = `${STORAGE_PREFIX}session_token`
-const REFRESH_TOKEN_KEY = `${STORAGE_PREFIX}refresh_token`
-const TOKEN_EXPIRY_KEY = `${STORAGE_PREFIX}token_expiry`
-const CONNECTION_ID_KEY = `${STORAGE_PREFIX}connection_id`
-const API_KEY_KEY = `${STORAGE_PREFIX}api_key`
 
 export class TokenStorage {
-  constructor() {
+  /**
+   * Create a TokenStorage instance for a specific world
+   * @param {string} worldId - The Foundry world ID (game.world.id)
+   */
+  constructor(worldId) {
+    if (!worldId) {
+      throw new Error('TokenStorage requires a worldId')
+    }
+    this.worldId = worldId
     this.storage = window.localStorage
+
+    // Namespaced keys for this specific world
+    this.keys = {
+      sessionToken: `${STORAGE_PREFIX}${worldId}_session_token`,
+      refreshToken: `${STORAGE_PREFIX}${worldId}_refresh_token`,
+      tokenExpiry: `${STORAGE_PREFIX}${worldId}_token_expiry`,
+      connectionId: `${STORAGE_PREFIX}${worldId}_connection_id`,
+      apiKey: `${STORAGE_PREFIX}${worldId}_api_key`,
+    }
+
+    Logger.debug('TokenStorage initialized for world', { worldId })
   }
 
   /**
@@ -24,11 +41,11 @@ export class TokenStorage {
     try {
       const expiryTime = Date.now() + (expiresIn * 1000)
 
-      this.storage.setItem(SESSION_TOKEN_KEY, sessionToken)
-      this.storage.setItem(REFRESH_TOKEN_KEY, refreshToken)
-      this.storage.setItem(TOKEN_EXPIRY_KEY, String(expiryTime))
+      this.storage.setItem(this.keys.sessionToken, sessionToken)
+      this.storage.setItem(this.keys.refreshToken, refreshToken)
+      this.storage.setItem(this.keys.tokenExpiry, String(expiryTime))
 
-      Logger.debug('Tokens stored successfully', { expiresIn })
+      Logger.debug('Tokens stored successfully', { worldId: this.worldId, expiresIn })
       return true
     } catch (error) {
       Logger.error('Failed to store tokens', error)
@@ -40,49 +57,49 @@ export class TokenStorage {
    * Store connection ID for reference
    */
   storeConnectionId(connectionId) {
-    this.storage.setItem(CONNECTION_ID_KEY, connectionId)
+    this.storage.setItem(this.keys.connectionId, connectionId)
   }
 
   /**
    * Store API key for webhook authentication
    */
   storeApiKey(apiKey) {
-    this.storage.setItem(API_KEY_KEY, apiKey)
+    this.storage.setItem(this.keys.apiKey, apiKey)
   }
 
   /**
    * Get stored API key
    */
   getApiKey() {
-    return this.storage.getItem(API_KEY_KEY)
+    return this.storage.getItem(this.keys.apiKey)
   }
 
   /**
    * Get the session token
    */
   getSessionToken() {
-    return this.storage.getItem(SESSION_TOKEN_KEY)
+    return this.storage.getItem(this.keys.sessionToken)
   }
 
   /**
    * Get the refresh token
    */
   getRefreshToken() {
-    return this.storage.getItem(REFRESH_TOKEN_KEY)
+    return this.storage.getItem(this.keys.refreshToken)
   }
 
   /**
    * Get stored connection ID
    */
   getConnectionId() {
-    return this.storage.getItem(CONNECTION_ID_KEY)
+    return this.storage.getItem(this.keys.connectionId)
   }
 
   /**
    * Get token expiry timestamp
    */
   getTokenExpiry() {
-    const expiry = this.storage.getItem(TOKEN_EXPIRY_KEY)
+    const expiry = this.storage.getItem(this.keys.tokenExpiry)
     return expiry ? parseInt(expiry, 10) : null
   }
 
@@ -115,15 +132,15 @@ export class TokenStorage {
   }
 
   /**
-   * Clear all stored tokens
+   * Clear all stored tokens for this world
    */
   clearTokens() {
-    this.storage.removeItem(SESSION_TOKEN_KEY)
-    this.storage.removeItem(REFRESH_TOKEN_KEY)
-    this.storage.removeItem(TOKEN_EXPIRY_KEY)
-    this.storage.removeItem(CONNECTION_ID_KEY)
-    this.storage.removeItem(API_KEY_KEY)
-    Logger.info('Tokens cleared')
+    this.storage.removeItem(this.keys.sessionToken)
+    this.storage.removeItem(this.keys.refreshToken)
+    this.storage.removeItem(this.keys.tokenExpiry)
+    this.storage.removeItem(this.keys.connectionId)
+    this.storage.removeItem(this.keys.apiKey)
+    Logger.info('Tokens cleared for world', { worldId: this.worldId })
   }
 
   /**
@@ -146,6 +163,7 @@ export class TokenStorage {
     const apiKey = this.getApiKey()
 
     return {
+      worldId: this.worldId,
       hasSessionToken: !!sessionToken,
       hasRefreshToken: !!refreshToken,
       hasApiKey: !!apiKey,
@@ -155,6 +173,24 @@ export class TokenStorage {
       expiresIn: this.getTimeUntilExpiry(),
       isExpired: this.isTokenExpired()
     }
+  }
+
+  /**
+   * Static method to clear tokens for all worlds (useful for debugging/reset)
+   */
+  static clearAllWorlds() {
+    const storage = window.localStorage
+    const keysToRemove = []
+
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i)
+      if (key && key.startsWith(STORAGE_PREFIX)) {
+        keysToRemove.push(key)
+      }
+    }
+
+    keysToRemove.forEach(key => storage.removeItem(key))
+    Logger.info('All Tumulte tokens cleared', { count: keysToRemove.length })
   }
 }
 

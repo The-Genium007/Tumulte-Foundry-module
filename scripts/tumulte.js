@@ -17,16 +17,19 @@ import TumulteSocketClient from './lib/socket-client.js'
 import DiceCollector from './collectors/dice-collector.js'
 import CharacterCollector from './collectors/character-collector.js'
 import CombatCollector from './collectors/combat-collector.js'
+import TumulteConnectionMenu from './apps/connection-menu.js'
 
 const MODULE_ID = 'tumulte-integration'
-const MODULE_VERSION = '2.0.0'
+const MODULE_VERSION = '2.0.1'
 
 /**
  * Main Tumulte Integration Class
  */
 class TumulteIntegration {
   constructor() {
-    this.tokenStorage = new TokenStorage()
+    // TokenStorage, PairingManager, and SocketClient are initialized in initialize()
+    // because they require game.world.id which is only available after Foundry is ready
+    this.tokenStorage = null
     this.pairingManager = null
     this.socketClient = null
 
@@ -37,7 +40,11 @@ class TumulteIntegration {
 
     // State
     this.initialized = false
-    this.serverUrl = 'http://localhost:3333'
+    this.worldId = null
+    // Default URL - placeholder is replaced by CI/CD for staging/prod
+    // If placeholder is still present, we're in local dev mode
+    const configuredUrl = 'https://api-staging.tumulte.app'
+    this.serverUrl = configuredUrl.startsWith('__') ? 'http://localhost:3333' : configuredUrl
   }
 
   /**
@@ -46,19 +53,31 @@ class TumulteIntegration {
   async initialize() {
     Logger.info(`Initializing Tumulte Integration v${MODULE_VERSION}`)
 
+    // Get worldId from Foundry (now available since we're in the ready hook)
+    this.worldId = game.world.id
+    Logger.info('World ID', { worldId: this.worldId })
+
     // Register settings
     this.registerSettings()
 
-    // Load server URL from settings
-    this.serverUrl = game.settings.get(MODULE_ID, 'serverUrl')
+    // Load server URL from settings (may be empty if first pairing)
+    const savedUrl = game.settings.get(MODULE_ID, 'serverUrl')
+    if (savedUrl) {
+      this.serverUrl = savedUrl
+    }
 
-    // Initialize managers
+    // Initialize TokenStorage with worldId for namespaced storage
+    this.tokenStorage = new TokenStorage(this.worldId)
+
+    // Initialize managers with worldId
     this.pairingManager = new PairingManager({
+      worldId: this.worldId,
       tumulteUrl: this.serverUrl,
       tokenStorage: this.tokenStorage
     })
 
     this.socketClient = new TumulteSocketClient({
+      worldId: this.worldId,
       serverUrl: this.serverUrl,
       tokenStorage: this.tokenStorage
     })
@@ -77,9 +96,6 @@ class TumulteIntegration {
       await this.connect()
     }
 
-    // Add UI elements
-    this.addUIElements()
-
     this.initialized = true
     Logger.info('Tumulte Integration initialized')
   }
@@ -88,14 +104,24 @@ class TumulteIntegration {
    * Register module settings
    */
   registerSettings() {
-    // Server URL
+    // Connection Menu - This adds a button in settings that opens our FormApplication
+    game.settings.registerMenu(MODULE_ID, 'connectionMenu', {
+      name: 'Tumulte Connection',
+      label: 'Manage Connection',
+      hint: 'Connect or disconnect from Tumulte, view status, and test the connection.',
+      icon: 'fas fa-plug',
+      type: TumulteConnectionMenu,
+      restricted: true // GM only
+    })
+
+    // Server URL (hidden - auto-injected from pairing)
     game.settings.register(MODULE_ID, 'serverUrl', {
-      name: game.i18n.localize('TUMULTE.SettingsServerUrl'),
-      hint: game.i18n.localize('TUMULTE.SettingsServerUrlHint'),
+      name: 'Tumulte Server URL',
+      hint: 'URL of the Tumulte server (automatically configured during pairing)',
       scope: 'world',
-      config: true,
+      config: false,
       type: String,
-      default: 'http://localhost:3333',
+      default: '',
       onChange: value => {
         this.serverUrl = value
         Logger.info('Server URL updated', { url: value })
@@ -104,12 +130,12 @@ class TumulteIntegration {
 
     // Send all rolls (not just criticals)
     game.settings.register(MODULE_ID, 'sendAllRolls', {
-      name: game.i18n.localize('TUMULTE.SettingsSendAllRolls'),
-      hint: game.i18n.localize('TUMULTE.SettingsSendAllRollsHint'),
+      name: 'Send All Rolls',
+      hint: 'If enabled, sends all dice rolls to Tumulte. If disabled, only sends critical successes and failures.',
       scope: 'world',
       config: true,
       type: Boolean,
-      default: false,
+      default: true,
       onChange: value => {
         if (this.diceCollector) {
           this.diceCollector.setSendAllRolls(value)
@@ -119,8 +145,8 @@ class TumulteIntegration {
 
     // Sync characters
     game.settings.register(MODULE_ID, 'syncCharacters', {
-      name: game.i18n.localize('TUMULTE.SettingsSyncCharacters'),
-      hint: game.i18n.localize('TUMULTE.SettingsSyncCharactersHint'),
+      name: 'Sync Characters',
+      hint: 'Enable automatic synchronization of character data with Tumulte.',
       scope: 'world',
       config: true,
       type: Boolean,
@@ -129,8 +155,8 @@ class TumulteIntegration {
 
     // Sync combat
     game.settings.register(MODULE_ID, 'syncCombat', {
-      name: game.i18n.localize('TUMULTE.SettingsSyncCombat'),
-      hint: game.i18n.localize('TUMULTE.SettingsSyncCombatHint'),
+      name: 'Sync Combat',
+      hint: 'Enable combat tracking and turn notifications.',
       scope: 'world',
       config: true,
       type: Boolean,
@@ -139,15 +165,15 @@ class TumulteIntegration {
 
     // Debug mode
     game.settings.register(MODULE_ID, 'debugMode', {
-      name: game.i18n.localize('TUMULTE.SettingsDebugMode'),
-      hint: game.i18n.localize('TUMULTE.SettingsDebugModeHint'),
+      name: 'Debug Mode',
+      hint: 'Enable debug logging in the browser console.',
       scope: 'world',
       config: true,
       type: Boolean,
       default: false
     })
 
-    // Connection status (hidden, for internal use)
+    // Connection ID (hidden, for internal use)
     game.settings.register(MODULE_ID, 'connectionId', {
       scope: 'world',
       config: false,
@@ -175,15 +201,40 @@ class TumulteIntegration {
     })
 
     this.socketClient.addEventListener('reconnect-failed', () => {
-      Logger.notify('Failed to reconnect to Tumulte', 'error')
+      ui.notifications.error('Failed to reconnect to Tumulte')
     })
 
     this.socketClient.addEventListener('auth-failed', () => {
-      Logger.notify('Authentication failed. Please re-pair with Tumulte.', 'error')
+      ui.notifications.error('Authentication failed. Please re-pair with Tumulte.')
     })
 
     this.socketClient.addEventListener('revoked', (event) => {
-      Logger.notify(`Connection revoked: ${event.detail.reason}`, 'warn')
+      ui.notifications.warn(`Connection revoked: ${event.detail.reason}`)
+    })
+
+    this.socketClient.addEventListener('campaign-deleted', () => {
+      // Campaign was deleted on Tumulte, tokens have been cleared
+      // Notify user with a dialog
+      new Dialog({
+        title: 'Campaign No Longer Exists',
+        content: `<p>The campaign associated with this Foundry world has been deleted from Tumulte.</p>
+                  <p>Please connect to a new campaign.</p>`,
+        buttons: {
+          connect: {
+            icon: '<i class="fas fa-link"></i>',
+            label: 'Connect',
+            callback: () => {
+              // Open the connection menu
+              new TumulteConnectionMenu().render(true)
+            }
+          },
+          ok: {
+            icon: '<i class="fas fa-check"></i>',
+            label: 'OK'
+          }
+        },
+        default: 'connect'
+      }).render(true)
     })
 
     // Acknowledgement events
@@ -211,9 +262,6 @@ class TumulteIntegration {
     if (game.settings.get(MODULE_ID, 'syncCombat')) {
       this.combatCollector.initialize()
     }
-
-    // Update UI
-    this.updateConnectionStatus(true)
   }
 
   /**
@@ -221,7 +269,6 @@ class TumulteIntegration {
    */
   onDisconnected(detail) {
     Logger.warn('Disconnected from Tumulte', detail)
-    this.updateConnectionStatus(false)
   }
 
   /**
@@ -247,7 +294,6 @@ class TumulteIntegration {
    */
   disconnect() {
     this.socketClient.disconnect()
-    this.updateConnectionStatus(false)
   }
 
   /**
@@ -268,7 +314,13 @@ class TumulteIntegration {
    */
   async completePairing(connectionData) {
     try {
-      await this.pairingManager.completePairing(connectionData)
+      const result = await this.pairingManager.completePairing(connectionData)
+
+      // Update serverUrl if provided by pairing
+      if (result.serverUrl) {
+        this.serverUrl = result.serverUrl
+        this.socketClient.updateServerUrl(result.serverUrl)
+      }
 
       // Store connection ID in settings
       game.settings.set(MODULE_ID, 'connectionId', connectionData.connection.id)
@@ -290,347 +342,7 @@ class TumulteIntegration {
     this.disconnect()
     await this.pairingManager.unpair()
     game.settings.set(MODULE_ID, 'connectionId', '')
-    Logger.notify('Disconnected from Tumulte', 'info')
-  }
-
-  /**
-   * Add UI elements (buttons, indicators)
-   */
-  addUIElements() {
-    // Add settings button
-    Hooks.on('renderSettingsConfig', (app, html) => {
-      this.addSettingsButtons(html)
-    })
-
-    // Add scene control button (optional)
-    Hooks.on('getSceneControlButtons', (controls) => {
-      this.addSceneControl(controls)
-    })
-  }
-
-  /**
-   * Add buttons to settings panel
-   */
-  addSettingsButtons(html) {
-    const section = html.find('[data-category="tumulte-integration"]')
-    if (section.length === 0) return
-
-    const isPaired = this.tokenStorage.isPaired()
-    const isConnected = this.socketClient?.connected
-
-    // Create status text
-    let statusText = game.i18n.localize('TUMULTE.StatusDisconnected')
-    let statusClass = 'disconnected'
-    if (isConnected) {
-      statusText = game.i18n.localize('TUMULTE.StatusConnected')
-      statusClass = 'connected'
-    } else if (isPaired) {
-      statusText = game.i18n.localize('TUMULTE.StatusPaired')
-      statusClass = 'paired'
-    }
-
-    // Create button container using DOM methods
-    const container = document.createElement('div')
-    container.className = 'tumulte-settings-buttons'
-
-    // Status display
-    const statusGroup = document.createElement('div')
-    statusGroup.className = 'form-group tumulte-buttons'
-
-    const statusLabel = document.createElement('label')
-    statusLabel.textContent = game.i18n.localize('TUMULTE.ConnectionStatus')
-    statusGroup.appendChild(statusLabel)
-
-    const statusFields = document.createElement('div')
-    statusFields.className = 'form-fields'
-
-    const statusSpan = document.createElement('span')
-    statusSpan.className = `tumulte-status ${statusClass}`
-
-    const statusIcon = document.createElement('i')
-    statusIcon.className = 'fas fa-circle'
-    statusSpan.appendChild(statusIcon)
-    statusSpan.appendChild(document.createTextNode(' ' + statusText))
-
-    statusFields.appendChild(statusSpan)
-    statusGroup.appendChild(statusFields)
-    container.appendChild(statusGroup)
-
-    // Buttons group
-    const buttonsGroup = document.createElement('div')
-    buttonsGroup.className = 'form-group'
-
-    if (isPaired) {
-      // Unpair button
-      const unpairBtn = document.createElement('button')
-      unpairBtn.type = 'button'
-      unpairBtn.className = 'tumulte-unpair'
-
-      const unpairIcon = document.createElement('i')
-      unpairIcon.className = 'fas fa-unlink'
-      unpairBtn.appendChild(unpairIcon)
-      unpairBtn.appendChild(document.createTextNode(' ' + game.i18n.localize('TUMULTE.Unpair')))
-      unpairBtn.addEventListener('click', () => this.unpair())
-      buttonsGroup.appendChild(unpairBtn)
-
-      // Reconnect button (if not connected)
-      if (!isConnected) {
-        const reconnectBtn = document.createElement('button')
-        reconnectBtn.type = 'button'
-        reconnectBtn.className = 'tumulte-reconnect'
-
-        const reconnectIcon = document.createElement('i')
-        reconnectIcon.className = 'fas fa-plug'
-        reconnectBtn.appendChild(reconnectIcon)
-        reconnectBtn.appendChild(document.createTextNode(' ' + game.i18n.localize('TUMULTE.Reconnect')))
-        reconnectBtn.addEventListener('click', () => this.connect())
-        buttonsGroup.appendChild(reconnectBtn)
-      }
-    } else {
-      // Pair button
-      const pairBtn = document.createElement('button')
-      pairBtn.type = 'button'
-      pairBtn.className = 'tumulte-pair'
-
-      const pairIcon = document.createElement('i')
-      pairIcon.className = 'fas fa-link'
-      pairBtn.appendChild(pairIcon)
-      pairBtn.appendChild(document.createTextNode(' ' + game.i18n.localize('TUMULTE.StartPairing')))
-      pairBtn.addEventListener('click', () => this.showPairingDialog())
-      buttonsGroup.appendChild(pairBtn)
-    }
-
-    // Test button
-    const testBtn = document.createElement('button')
-    testBtn.type = 'button'
-    testBtn.className = 'tumulte-test'
-
-    const testIcon = document.createElement('i')
-    testIcon.className = 'fas fa-vial'
-    testBtn.appendChild(testIcon)
-    testBtn.appendChild(document.createTextNode(' ' + game.i18n.localize('TUMULTE.TestRoll')))
-    testBtn.addEventListener('click', () => this.sendTestRoll())
-    buttonsGroup.appendChild(testBtn)
-
-    container.appendChild(buttonsGroup)
-    section.append(container)
-  }
-
-  /**
-   * Add scene control button
-   */
-  addSceneControl(controls) {
-    const tokenControls = controls.find(c => c.name === 'token')
-    if (!tokenControls) return
-
-    tokenControls.tools.push({
-      name: 'tumulte',
-      title: 'Tumulte',
-      icon: 'fas fa-broadcast-tower',
-      visible: game.user.isGM,
-      onClick: () => this.showStatusDialog(),
-      button: true
-    })
-  }
-
-  /**
-   * Update connection status display
-   */
-  updateConnectionStatus(connected) {
-    // Update any UI elements showing connection status
-    const statusElements = document.querySelectorAll('.tumulte-status')
-    statusElements.forEach(el => {
-      el.className = `tumulte-status ${connected ? 'connected' : 'disconnected'}`
-      // Clear existing content
-      while (el.firstChild) {
-        el.removeChild(el.firstChild)
-      }
-      // Add new content safely
-      const icon = document.createElement('i')
-      icon.className = 'fas fa-circle'
-      el.appendChild(icon)
-      el.appendChild(document.createTextNode(' ' + (connected ? 'Connected' : 'Disconnected')))
-    })
-  }
-
-  /**
-   * Show pairing dialog
-   */
-  async showPairingDialog() {
-    try {
-      const pairingInfo = await this.startPairing()
-
-      // Build content safely using DOM
-      const content = document.createElement('div')
-      content.className = 'tumulte-pairing-dialog'
-
-      const instructions = document.createElement('p')
-      instructions.textContent = game.i18n.localize('TUMULTE.PairingInstructions')
-      content.appendChild(instructions)
-
-      // Pairing code display
-      const codeDiv = document.createElement('div')
-      codeDiv.className = 'pairing-code'
-
-      const codeLabel = document.createElement('label')
-      codeLabel.textContent = game.i18n.localize('TUMULTE.PairingCode')
-      codeDiv.appendChild(codeLabel)
-
-      const codeEl = document.createElement('code')
-      codeEl.className = 'code'
-      codeEl.textContent = pairingInfo.code
-      codeDiv.appendChild(codeEl)
-      content.appendChild(codeDiv)
-
-      // Pairing URL
-      const urlDiv = document.createElement('div')
-      urlDiv.className = 'pairing-url'
-
-      const urlLabel = document.createElement('label')
-      urlLabel.textContent = game.i18n.localize('TUMULTE.PairingUrl')
-      urlDiv.appendChild(urlLabel)
-
-      const urlInput = document.createElement('input')
-      urlInput.type = 'text'
-      urlInput.value = pairingInfo.url
-      urlInput.readOnly = true
-      urlInput.addEventListener('click', () => urlInput.select())
-      urlDiv.appendChild(urlInput)
-
-      const copyBtn = document.createElement('button')
-      copyBtn.type = 'button'
-      copyBtn.className = 'copy-url'
-
-      const copyIcon = document.createElement('i')
-      copyIcon.className = 'fas fa-copy'
-      copyBtn.appendChild(copyIcon)
-      copyBtn.addEventListener('click', () => {
-        navigator.clipboard.writeText(pairingInfo.url)
-        ui.notifications.info(game.i18n.localize('TUMULTE.UrlCopied'))
-      })
-      urlDiv.appendChild(copyBtn)
-      content.appendChild(urlDiv)
-
-      // Expiry info
-      const expiryP = document.createElement('p')
-      expiryP.className = 'expires'
-      const remainingSecs = Math.floor((pairingInfo.expiresAt - Date.now()) / 1000)
-      expiryP.textContent = game.i18n.format('TUMULTE.PairingExpires', { seconds: remainingSecs })
-      content.appendChild(expiryP)
-
-      new Dialog({
-        title: game.i18n.localize('TUMULTE.PairingDialogTitle'),
-        content: content.outerHTML,
-        buttons: {
-          cancel: {
-            icon: '<i class="fas fa-times"></i>',
-            label: game.i18n.localize('Cancel'),
-            callback: () => this.pairingManager.cancelPairing()
-          }
-        },
-        default: 'cancel',
-        render: (html) => {
-          html.find('.copy-url').on('click', () => {
-            navigator.clipboard.writeText(pairingInfo.url)
-            ui.notifications.info(game.i18n.localize('TUMULTE.UrlCopied'))
-          })
-        }
-      }).render(true)
-
-    } catch (error) {
-      Logger.notify(`Pairing failed: ${error.message}`, 'error')
-    }
-  }
-
-  /**
-   * Show status dialog
-   */
-  showStatusDialog() {
-    const status = this.getStatus()
-    const tokenInfo = this.tokenStorage.debugInfo()
-
-    // Build content safely
-    const content = document.createElement('div')
-    content.className = 'tumulte-status-dialog'
-
-    // Connection section
-    const connHeader = document.createElement('h3')
-    connHeader.textContent = 'Connection'
-    content.appendChild(connHeader)
-
-    const connList = document.createElement('ul')
-    const connItems = [
-      { label: 'Connected', value: status.connected ? 'Yes' : 'No' },
-      { label: 'Paired', value: status.paired ? 'Yes' : 'No' },
-      { label: 'Connection ID', value: status.connectionId || 'N/A' }
-    ]
-    connItems.forEach(item => {
-      const li = document.createElement('li')
-      const strong = document.createElement('strong')
-      strong.textContent = item.label + ':'
-      li.appendChild(strong)
-      li.appendChild(document.createTextNode(' ' + item.value))
-      connList.appendChild(li)
-    })
-    content.appendChild(connList)
-
-    // Collectors section
-    const collHeader = document.createElement('h3')
-    collHeader.textContent = 'Collectors'
-    content.appendChild(collHeader)
-
-    const collList = document.createElement('ul')
-    const collItems = [
-      { label: 'Dice Collector', value: this.diceCollector ? 'Active' : 'Inactive' },
-      { label: 'Character Collector', value: this.characterCollector ? 'Active' : 'Inactive' },
-      { label: 'Combat Collector', value: this.combatCollector ? 'Active' : 'Inactive' }
-    ]
-    collItems.forEach(item => {
-      const li = document.createElement('li')
-      const strong = document.createElement('strong')
-      strong.textContent = item.label + ':'
-      li.appendChild(strong)
-      li.appendChild(document.createTextNode(' ' + item.value))
-      collList.appendChild(li)
-    })
-    content.appendChild(collList)
-
-    // Token info section
-    const tokenHeader = document.createElement('h3')
-    tokenHeader.textContent = 'Token Storage'
-    content.appendChild(tokenHeader)
-
-    const pre = document.createElement('pre')
-    pre.textContent = JSON.stringify(tokenInfo, null, 2)
-    content.appendChild(pre)
-
-    new Dialog({
-      title: 'Tumulte Status',
-      content: content.outerHTML,
-      buttons: {
-        ok: {
-          icon: '<i class="fas fa-check"></i>',
-          label: 'OK'
-        }
-      }
-    }).render(true)
-  }
-
-  /**
-   * Send a test dice roll
-   */
-  async sendTestRoll() {
-    if (!this.socketClient?.connected) {
-      Logger.notify('Not connected to Tumulte', 'warn')
-      return
-    }
-
-    const sent = await this.diceCollector?.sendTestRoll()
-    if (sent) {
-      Logger.notify('Test roll sent', 'info')
-    } else {
-      Logger.notify('Failed to send test roll', 'error')
-    }
+    ui.notifications.info('Disconnected from Tumulte')
   }
 
   /**

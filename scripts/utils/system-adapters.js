@@ -4,13 +4,29 @@
  */
 
 import Logger from './logger.js'
+import { createFlavorParser } from './flavor-parser.js'
 
 /**
  * Base adapter with generic implementation
  */
 class GenericAdapter {
+  constructor() {
+    this.flavorParser = null
+  }
+
   get systemId() {
     return 'generic'
+  }
+
+  /**
+   * Initialize the adapter (call after game is ready)
+   */
+  initialize() {
+    this.flavorParser = createFlavorParser()
+    Logger.info('System adapter initialized with FlavorParser', {
+      systemId: this.systemId,
+      language: game?.i18n?.lang
+    })
   }
 
   /**
@@ -20,9 +36,35 @@ class GenericAdapter {
     const speaker = message.speaker
     const actor = game.actors?.get(speaker?.actor)
 
+    Logger.info('Extracting roll data (GenericAdapter)', {
+      speaker,
+      actorName: actor?.name,
+      actorId: actor?.id,
+      flavor: message.flavor,
+      rollOptions: roll.options
+    })
+
     const diceResults = this.extractDiceResults(roll)
     const isCritical = this.detectCritical(roll)
     const criticalType = isCritical ? this.detectCriticalType(roll) : null
+    const rollType = this.detectRollType(roll, message)
+
+    // Parse flavor text for enriched data
+    const parsedFlavor = this.parseFlavorText(message.flavor)
+
+    Logger.info('Roll analysis complete', {
+      diceResults,
+      isCritical,
+      criticalType,
+      rollType,
+      formula: roll.formula,
+      total: roll.total,
+      parsedFlavor: {
+        skill: parsedFlavor.skill,
+        ability: parsedFlavor.ability,
+        confidence: parsedFlavor.confidence
+      }
+    })
 
     return {
       characterId: actor?.id || speaker?.actor || 'unknown',
@@ -34,15 +76,48 @@ class GenericAdapter {
       isCritical,
       criticalType,
       isHidden: message.whisper?.length > 0,
-      rollType: this.detectRollType(roll, message),
+      rollType: parsedFlavor.rollType || rollType, // Prefer parsed roll type
+      // NEW: Enriched flavor data
+      skill: parsedFlavor.skill,
+      skillRaw: parsedFlavor.skillRaw,
+      ability: parsedFlavor.ability,
+      abilityRaw: parsedFlavor.abilityRaw,
+      modifiers: parsedFlavor.modifiers,
       metadata: {
         foundryMessageId: message.id,
         foundryActorId: actor?.id,
         flavor: message.flavor,
         system: game.system.id,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        parsedFlavor: parsedFlavor // Include full parsed data for debugging
       }
     }
+  }
+
+  /**
+   * Parse flavor text using the FlavorParser
+   */
+  parseFlavorText(flavorText) {
+    // Lazy initialization of parser if not already done
+    if (!this.flavorParser) {
+      this.initialize()
+    }
+
+    if (!this.flavorParser) {
+      Logger.warn('FlavorParser not available, returning empty result')
+      return {
+        skill: null,
+        skillRaw: null,
+        ability: null,
+        abilityRaw: null,
+        rollType: null,
+        modifiers: [],
+        rawFlavor: flavorText,
+        confidence: 0
+      }
+    }
+
+    return this.flavorParser.parse(flavorText)
   }
 
   /**
@@ -153,6 +228,12 @@ class Dnd5eAdapter extends GenericAdapter {
 
   detectRollType(roll, message) {
     const flavor = (message.flavor || '').toLowerCase()
+
+    Logger.info('D&D 5e detectRollType', {
+      flavor: message.flavor,
+      flavorLower: flavor,
+      rollOptions: roll.options
+    })
 
     // D&D 5e specific roll types
     if (flavor.includes('attack roll')) return 'attack'
