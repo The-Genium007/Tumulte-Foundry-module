@@ -43,7 +43,7 @@ class TumulteIntegration {
     this.worldId = null
     // Build URL - placeholder is replaced by CI/CD for staging/prod
     // If placeholder is still present, we're in local dev mode
-    const configuredUrl = '__TUMULTE_API_URL__'
+    const configuredUrl = 'https://api-staging.tumulte.app'
     this.buildUrl = configuredUrl.startsWith('__') ? null : configuredUrl
     this.serverUrl = this.buildUrl || 'http://localhost:3333'
   }
