@@ -126,6 +126,7 @@ export class TumulteSocketClient extends EventTarget {
 
         this.socket.on('ping', this.handlePing)
         this.socket.on('connection:revoked', this.handleRevoked)
+        this.socket.on('campaign:deleted', this.handleCampaignDeleted.bind(this))
 
         // Acknowledgement events
         this.socket.on('dice:roll:ack', (data) => {
@@ -253,6 +254,22 @@ export class TumulteSocketClient extends EventTarget {
   }
 
   /**
+   * Handle campaign deletion notification from server
+   * This is different from revocation - the campaign was explicitly deleted
+   */
+  async handleCampaignDeleted(data) {
+    Logger.warn('Campaign deleted on Tumulte', data)
+    Logger.notify(`Campaign "${data.campaignName || 'Unknown'}" has been deleted on Tumulte`, 'warn')
+
+    // Clear tokens since the campaign no longer exists
+    await this.tokenStorage.clearTokens()
+    this.disconnect()
+
+    // Dispatch event for UI handling
+    this.dispatchEvent(new CustomEvent('campaign-deleted', { detail: data }))
+  }
+
+  /**
    * Schedule a reconnection attempt
    */
   scheduleReconnect(delay = null) {
@@ -341,6 +358,68 @@ export class TumulteSocketClient extends EventTarget {
     this.reconnectAttempts = 0
 
     Logger.info('Disconnected from Tumulte')
+  }
+
+  /**
+   * Check connection health via HTTP endpoint
+   * This is a fallback when WebSocket is not available
+   * Returns: { status: 'healthy' | 'not_found' | 'revoked' | 'expired' | 'campaign_deleted' | 'server_unavailable', ... }
+   */
+  async checkConnectionHealth() {
+    const apiKey = this.tokenStorage.getApiKey()
+
+    if (!apiKey) {
+      return { status: 'not_paired', error: 'No API key available' }
+    }
+
+    try {
+      const response = await fetch(`${this.serverUrl}/webhooks/foundry/connection-health`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        Logger.debug('Connection health check: healthy', data)
+        return {
+          status: 'healthy',
+          connectionId: data.connectionId,
+          campaignId: data.campaignId,
+          campaignName: data.campaignName,
+          tunnelStatus: data.tunnelStatus,
+          lastHeartbeatAt: data.lastHeartbeatAt
+        }
+      }
+
+      // Handle specific error statuses
+      if (response.status === 404) {
+        Logger.warn('Connection health check: not found')
+        return { status: 'not_found', error: data.error }
+      }
+
+      if (response.status === 401) {
+        Logger.warn('Connection health check: revoked or expired', data)
+        return { status: data.status || 'revoked', error: data.error }
+      }
+
+      if (response.status === 410) {
+        Logger.warn('Connection health check: campaign deleted', data)
+        return { status: 'campaign_deleted', error: data.error, connectionId: data.connectionId }
+      }
+
+      // Generic error
+      Logger.error('Connection health check failed', data)
+      return { status: 'error', error: data.error || 'Unknown error' }
+
+    } catch (error) {
+      // Network error - server unavailable
+      Logger.warn('Connection health check: server unavailable', error.message)
+      return { status: 'server_unavailable', error: error.message }
+    }
   }
 
   /**
