@@ -5,6 +5,23 @@ All notable changes to the Tumulte Integration module will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.4] - 2025-01-21
+
+### Added
+- Connection health check endpoint for improved resilience
+- Automatic detection of campaign deletion with user notification
+- HTTP fallback (`checkConnectionHealth()`) when WebSocket connection fails
+- Clear distinction between "server unavailable" and "connection revoked" states
+- New dialog UI for connection issues (revoked, campaign deleted, reconnect failed)
+
+### Improved
+- Better error messages when connection issues occur
+- Reconnection dialogs with clear action buttons
+- Campaign deletion notification includes campaign name
+
+### Fixed
+- Module now gracefully handles temporary server unavailability without losing pairing
+
 ## [2.0.3] - 2025-01-21
 
 ### Fixed

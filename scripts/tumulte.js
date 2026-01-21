@@ -20,7 +20,7 @@ import CombatCollector from './collectors/combat-collector.js'
 import TumulteConnectionMenu from './apps/connection-menu.js'
 
 const MODULE_ID = 'tumulte-integration'
-const MODULE_VERSION = '2.0.3'
+const MODULE_VERSION = '2.0.4'
 
 /**
  * Main Tumulte Integration Class
@@ -234,31 +234,96 @@ class TumulteIntegration {
     })
 
     this.socketClient.addEventListener('revoked', (event) => {
-      ui.notifications.warn(`Connection revoked: ${event.detail.reason}`)
-    })
-
-    this.socketClient.addEventListener('campaign-deleted', () => {
-      // Campaign was deleted on Tumulte, tokens have been cleared
-      // Notify user with a dialog
+      // Connection was revoked (manually by user or due to token invalidation)
+      const reason = event.detail?.reason || 'Unknown reason'
       new Dialog({
-        title: 'Campaign No Longer Exists',
-        content: `<p>The campaign associated with this Foundry world has been deleted from Tumulte.</p>
-                  <p>Please connect to a new campaign.</p>`,
+        title: 'Tumulte Connection Revoked',
+        content: `
+          <div style="text-align: center; padding: 10px;">
+            <i class="fas fa-unlink fa-3x" style="color: #e74c3c; margin-bottom: 15px;"></i>
+            <p style="font-size: 14px; margin-bottom: 10px;">Your connection to Tumulte has been revoked.</p>
+            <p style="font-size: 12px; color: #666;"><strong>Reason:</strong> ${reason}</p>
+            <p style="font-size: 12px; color: #666; margin-top: 15px;">You can reconnect by starting a new pairing process.</p>
+          </div>
+        `,
         buttons: {
-          connect: {
-            icon: '<i class="fas fa-link"></i>',
-            label: 'Connect',
+          reconnect: {
+            icon: '<i class="fas fa-plug"></i>',
+            label: 'Reconnect',
             callback: () => {
-              // Open the connection menu
               new TumulteConnectionMenu().render(true)
             }
           },
-          ok: {
-            icon: '<i class="fas fa-check"></i>',
-            label: 'OK'
+          close: {
+            icon: '<i class="fas fa-times"></i>',
+            label: 'Close'
+          }
+        },
+        default: 'reconnect'
+      }).render(true)
+    })
+
+    this.socketClient.addEventListener('campaign-deleted', (event) => {
+      // Campaign was deleted on Tumulte, tokens have been cleared
+      const campaignName = event.detail?.campaignName || 'your campaign'
+      new Dialog({
+        title: 'Campaign Deleted',
+        content: `
+          <div style="text-align: center; padding: 10px;">
+            <i class="fas fa-trash-alt fa-3x" style="color: #e74c3c; margin-bottom: 15px;"></i>
+            <p style="font-size: 14px; margin-bottom: 10px;">The campaign <strong>"${campaignName}"</strong> has been deleted from Tumulte.</p>
+            <p style="font-size: 12px; color: #666;">This Foundry world is no longer linked to any Tumulte campaign.</p>
+            <p style="font-size: 12px; color: #666; margin-top: 15px;">You can connect to a new campaign to continue using Tumulte features.</p>
+          </div>
+        `,
+        buttons: {
+          connect: {
+            icon: '<i class="fas fa-link"></i>',
+            label: 'Connect to New Campaign',
+            callback: () => {
+              new TumulteConnectionMenu().render(true)
+            }
+          },
+          close: {
+            icon: '<i class="fas fa-times"></i>',
+            label: 'Close'
           }
         },
         default: 'connect'
+      }).render(true)
+    })
+
+    this.socketClient.addEventListener('reconnect-failed', () => {
+      // Show a dialog when reconnection fails after max attempts
+      new Dialog({
+        title: 'Connection Lost',
+        content: `
+          <div style="text-align: center; padding: 10px;">
+            <i class="fas fa-cloud-download-alt fa-3x" style="color: #f39c12; margin-bottom: 15px;"></i>
+            <p style="font-size: 14px; margin-bottom: 10px;">Unable to reach Tumulte server after multiple attempts.</p>
+            <p style="font-size: 12px; color: #666;">The server may be temporarily unavailable.</p>
+            <p style="font-size: 12px; color: #666; margin-top: 10px;"><strong>Your dice rolls and data are not being lost.</strong></p>
+            <p style="font-size: 12px; color: #666;">They will sync automatically when the connection is restored.</p>
+          </div>
+        `,
+        buttons: {
+          retry: {
+            icon: '<i class="fas fa-redo"></i>',
+            label: 'Retry Now',
+            callback: async () => {
+              try {
+                await this.connect()
+              } catch (error) {
+                ui.notifications.error('Connection failed. Please try again later.')
+              }
+            }
+          },
+          close: {
+            icon: '<i class="fas fa-times"></i>',
+            label: 'Close'
+          }
+        },
+        default: 'retry'
       }).render(true)
     })
 
