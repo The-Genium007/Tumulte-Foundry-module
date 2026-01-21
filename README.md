@@ -20,7 +20,7 @@ Connect your Foundry VTT game to [Tumulte](https://tumulte.app) and display dice
 2. Go to **Add-on Modules** → **Install Module**
 3. Search for "Tumulte Integration" or paste the manifest URL:
    ```
-   https://github.com/tumulte/foundry-integration/releases/latest/download/module.json
+   __TUMULTE_MANIFEST_URL__
    ```
 4. Click **Install** and enable the module in your world
 
