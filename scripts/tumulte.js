@@ -20,7 +20,7 @@ import CombatCollector from './collectors/combat-collector.js'
 import TumulteConnectionMenu from './apps/connection-menu.js'
 
 const MODULE_ID = 'tumulte-integration'
-const MODULE_VERSION = '2.0.2'
+const MODULE_VERSION = '2.0.3'
 
 /**
  * Main Tumulte Integration Class
@@ -97,7 +97,12 @@ class TumulteIntegration {
     // Auto-connect if already paired
     if (this.tokenStorage.isPaired()) {
       Logger.info('Found existing pairing, attempting to connect...')
-      await this.connect()
+      try {
+        await this.connect()
+      } catch (error) {
+        Logger.error('Auto-connect failed', error)
+        Logger.notify('Failed to auto-connect to Tumulte. Please reconnect manually.', 'warn')
+      }
     }
 
     this.initialized = true
@@ -342,9 +347,6 @@ class TumulteIntegration {
         this.socketClient.updateServerUrl(result.serverUrl)
       }
 
-      // Store connection ID in settings
-      game.settings.set(MODULE_ID, 'connectionId', connectionData.connection.id)
-
       // Connect immediately
       await this.connect()
 
@@ -361,7 +363,6 @@ class TumulteIntegration {
   async unpair() {
     this.disconnect()
     await this.pairingManager.unpair()
-    game.settings.set(MODULE_ID, 'connectionId', '')
     ui.notifications.info('Disconnected from Tumulte')
   }
 
