@@ -75,7 +75,7 @@ export class DiceCollector {
    * Handle new chat messages
    */
   async onChatMessage(message, options, userId) {
-    Logger.info('Chat message received', {
+    Logger.debug('Chat message received', {
       isRoll: message.isRoll,
       hasRolls: message.rolls?.length > 0,
       rollCount: message.rolls?.length || 0,
@@ -102,7 +102,7 @@ export class DiceCollector {
     }
 
     // Process each roll in the message
-    Logger.info(`Processing ${message.rolls.length} roll(s) from message`)
+    Logger.debug(`Processing ${message.rolls.length} roll(s) from message`)
     for (const roll of message.rolls) {
       await this.processRoll(message, roll)
     }
@@ -114,7 +114,7 @@ export class DiceCollector {
   async processRoll(message, roll) {
     try {
       // Log raw roll object for debugging
-      Logger.info('Raw roll object', {
+      Logger.debug('Raw roll object', {
         formula: roll.formula,
         total: roll.total,
         terms: roll.terms?.map(t => ({
@@ -133,7 +133,7 @@ export class DiceCollector {
       rollData.campaignId = game.world.id // Use world ID as campaign ID
 
       // Log full roll data for debugging
-      Logger.info('Roll data extracted', {
+      Logger.debug('Roll data extracted', {
         characterName: rollData.characterName,
         characterId: rollData.characterId,
         formula: rollData.rollFormula,
@@ -151,7 +151,7 @@ export class DiceCollector {
 
       // Check if we should send this roll
       if (!this.shouldSendRoll(rollData)) {
-        Logger.info('Roll filtered out (not critical, sendAllRolls disabled)', {
+        Logger.debug('Roll filtered out (not critical, sendAllRolls disabled)', {
           formula: rollData.rollFormula,
           isCritical: rollData.isCritical,
           sendAllRolls: this.sendAllRolls
@@ -160,11 +160,11 @@ export class DiceCollector {
       }
 
       // Send to Tumulte via WebSocket
-      Logger.info('Sending dice:roll event to Tumulte', { rollId: rollData.rollId })
+      Logger.debug('Sending dice:roll event to Tumulte', { rollId: rollData.rollId })
       const sent = this.socket.emit('dice:roll', rollData)
 
       if (sent) {
-        Logger.info('Dice roll sent successfully', {
+        Logger.debug('Dice roll sent successfully', {
           formula: rollData.rollFormula,
           result: rollData.result,
           isCritical: rollData.isCritical,

@@ -69,7 +69,14 @@ export class PairingManager {
         throw new Error(error.error || `Failed to start pairing: HTTP ${response.status}`)
       }
 
-      const { code, expiresIn, expiresAt, serverUrl } = await response.json()
+      const data = await response.json()
+
+      // Validate required fields in response
+      if (!data.code || typeof data.expiresIn !== 'number') {
+        throw new Error('Invalid response from server: missing required fields (code, expiresIn)')
+      }
+
+      const { code, expiresIn, expiresAt, serverUrl } = data
 
       // Store server URL from backend response
       if (serverUrl) {
@@ -119,7 +126,12 @@ export class PairingManager {
     }
 
     this.pollingInterval = setInterval(async () => {
-      await this.checkPairingStatus()
+      try {
+        await this.checkPairingStatus()
+      } catch (error) {
+        Logger.error('Critical polling error, stopping polling', error)
+        this.stopPolling()
+      }
     }, POLLING_INTERVAL)
   }
 
@@ -397,6 +409,15 @@ export class PairingManager {
    */
   onExpired(callback) {
     this.onPairingExpired = callback
+  }
+
+  /**
+   * Clear all registered callbacks
+   * Should be called before registering new callbacks to prevent memory leaks
+   */
+  clearCallbacks() {
+    this.onPairingComplete = null
+    this.onPairingExpired = null
   }
 
   /**

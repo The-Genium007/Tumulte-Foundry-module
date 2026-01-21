@@ -20,7 +20,7 @@ import CombatCollector from './collectors/combat-collector.js'
 import TumulteConnectionMenu from './apps/connection-menu.js'
 
 const MODULE_ID = 'tumulte-integration'
-const MODULE_VERSION = '2.0.2'
+const MODULE_VERSION = '2.0.3'
 
 /**
  * Main Tumulte Integration Class
@@ -41,10 +41,11 @@ class TumulteIntegration {
     // State
     this.initialized = false
     this.worldId = null
-    // Default URL - placeholder is replaced by CI/CD for staging/prod
+    // Build URL - placeholder is replaced by CI/CD for staging/prod
     // If placeholder is still present, we're in local dev mode
     const configuredUrl = '__TUMULTE_API_URL__'
-    this.serverUrl = configuredUrl.startsWith('__') ? 'http://localhost:3333' : configuredUrl
+    this.buildUrl = configuredUrl.startsWith('__') ? null : configuredUrl
+    this.serverUrl = this.buildUrl || 'http://localhost:3333'
   }
 
   /**
@@ -60,10 +61,13 @@ class TumulteIntegration {
     // Register settings
     this.registerSettings()
 
-    // Load server URL from settings (may be empty if first pairing)
-    const savedUrl = game.settings.get(MODULE_ID, 'serverUrl')
-    if (savedUrl) {
-      this.serverUrl = savedUrl
+    // Load server URL from settings, but only in dev mode (no build URL)
+    // In staging/production, the build URL takes priority to prevent stale saved URLs
+    if (!this.buildUrl) {
+      const savedUrl = game.settings.get(MODULE_ID, 'serverUrl')
+      if (savedUrl) {
+        this.serverUrl = savedUrl
+      }
     }
 
     // Initialize TokenStorage with worldId for namespaced storage
@@ -93,7 +97,12 @@ class TumulteIntegration {
     // Auto-connect if already paired
     if (this.tokenStorage.isPaired()) {
       Logger.info('Found existing pairing, attempting to connect...')
-      await this.connect()
+      try {
+        await this.connect()
+      } catch (error) {
+        Logger.error('Auto-connect failed', error)
+        Logger.notify('Failed to auto-connect to Tumulte. Please reconnect manually.', 'warn')
+      }
     }
 
     this.initialized = true
@@ -338,9 +347,6 @@ class TumulteIntegration {
         this.socketClient.updateServerUrl(result.serverUrl)
       }
 
-      // Store connection ID in settings
-      game.settings.set(MODULE_ID, 'connectionId', connectionData.connection.id)
-
       // Connect immediately
       await this.connect()
 
@@ -357,7 +363,6 @@ class TumulteIntegration {
   async unpair() {
     this.disconnect()
     await this.pairingManager.unpair()
-    game.settings.set(MODULE_ID, 'connectionId', '')
     ui.notifications.info('Disconnected from Tumulte')
   }
 
