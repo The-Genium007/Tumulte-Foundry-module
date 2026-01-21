@@ -32,5 +32,7 @@
   "manifest": "__TUMULTE_MANIFEST_URL__",
   "download": "__TUMULTE_DOWNLOAD_URL__",
   "readme": "README.md",
-  "changelog": "CHANGELOG.md"
+  "changelog": "CHANGELOG.md",
+  "bugs": "https://github.com/The-Genium007/Tumulte-Foundry-module/issues",
+  "license": "LICENSE"
 }
