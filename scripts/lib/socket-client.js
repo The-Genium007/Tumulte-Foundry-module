@@ -206,7 +206,7 @@ export class TumulteSocketClient extends EventTarget {
       const reason = error.message.split(':')[1] || 'The campaign no longer exists'
       Logger.warn('Campaign deleted, clearing tokens', { reason })
       Logger.notify('The campaign associated with this Foundry world no longer exists on Tumulte. Please connect to a new campaign.', 'error')
-      this.tokenStorage.clearTokens()
+      await this.tokenStorage.clearTokens()
       this.dispatchEvent(new CustomEvent('campaign-deleted', { detail: { reason } }))
       return
     }
@@ -220,7 +220,7 @@ export class TumulteSocketClient extends EventTarget {
       } catch (refreshError) {
         Logger.error('Token refresh failed', refreshError)
         Logger.notify('Authentication failed. Please re-pair with Tumulte.', 'error')
-        this.tokenStorage.clearTokens()
+        await this.tokenStorage.clearTokens()
         this.dispatchEvent(new CustomEvent('auth-failed'))
         return
       }
@@ -242,11 +242,11 @@ export class TumulteSocketClient extends EventTarget {
   /**
    * Handle connection revocation
    */
-  handleRevoked(data) {
+  async handleRevoked(data) {
     Logger.warn('Connection revoked by server', data)
     Logger.notify(`Connection revoked: ${data.reason}`, 'error')
 
-    this.tokenStorage.clearTokens()
+    await this.tokenStorage.clearTokens()
     this.disconnect()
 
     this.dispatchEvent(new CustomEvent('revoked', { detail: data }))

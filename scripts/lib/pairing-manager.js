@@ -210,8 +210,8 @@ export class PairingManager {
       )
 
       // Store connection info
-      this.tokenStorage.storeConnectionId(data.connectionId)
-      this.tokenStorage.storeApiKey(data.apiKey)
+      await this.tokenStorage.storeConnectionId(data.connectionId)
+      await this.tokenStorage.storeApiKey(data.apiKey)
 
       const completedPairing = this.currentPairing
 
@@ -312,11 +312,11 @@ export class PairingManager {
       )
 
       // Store connection ID
-      this.tokenStorage.storeConnectionId(connection.id)
+      await this.tokenStorage.storeConnectionId(connection.id)
 
       // Store API key if provided
       if (connection.apiKey) {
-        this.tokenStorage.storeApiKey(connection.apiKey)
+        await this.tokenStorage.storeApiKey(connection.apiKey)
       }
 
       // Clear pairing session
@@ -423,7 +423,7 @@ export class PairingManager {
       }
     }
 
-    this.tokenStorage.clearTokens()
+    await this.tokenStorage.clearTokens()
     this.cancelPairing()
     Logger.info('Unpaired from Tumulte')
   }

@@ -20,7 +20,7 @@ import CombatCollector from './collectors/combat-collector.js'
 import TumulteConnectionMenu from './apps/connection-menu.js'
 
 const MODULE_ID = 'tumulte-integration'
-const MODULE_VERSION = '2.0.1'
+const MODULE_VERSION = '2.0.2'
 
 /**
  * Main Tumulte Integration Class
@@ -173,12 +173,28 @@ class TumulteIntegration {
       default: false
     })
 
-    // Connection ID (hidden, for internal use)
+    // Connection ID (hidden, for internal use) - DEPRECATED: kept for reference, now in credentials
     game.settings.register(MODULE_ID, 'connectionId', {
       scope: 'world',
       config: false,
       type: String,
       default: ''
+    })
+
+    // Credentials storage (persisted in Foundry DB instead of localStorage)
+    game.settings.register(MODULE_ID, 'credentials', {
+      name: 'Tumulte Credentials',
+      hint: 'Stored credentials for Tumulte connection (persisted in Foundry database)',
+      scope: 'world',
+      config: false,
+      type: Object,
+      default: {
+        sessionToken: null,
+        refreshToken: null,
+        tokenExpiry: null,
+        connectionId: null,
+        apiKey: null
+      }
     })
   }
 

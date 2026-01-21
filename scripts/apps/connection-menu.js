@@ -118,8 +118,8 @@ export class TumulteConnectionMenu extends FormApplication {
       if (tumulte.tokenStorage?.isPaired()) {
         Logger.info('Already paired, disconnecting before new pairing...')
         tumulte.disconnect()
-        tumulte.tokenStorage.clearTokens()
-        game.settings.set('tumulte-integration', 'connectionId', '')
+        await tumulte.tokenStorage.clearTokens()
+        await game.settings.set('tumulte-integration', 'connectionId', '')
       }
 
       // Register callbacks for pairing completion/expiry
