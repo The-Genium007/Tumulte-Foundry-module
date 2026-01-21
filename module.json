@@ -29,8 +29,8 @@
   ],
   "socket": true,
   "url": "https://github.com/The-Genium007/Tumulte-Foundry-module",
-  "manifest": "https://raw.githubusercontent.com/The-Genium007/Tumulte-Foundry-module/main/module.json",
-  "download": "https://github.com/The-Genium007/Tumulte-Foundry-module/releases/latest/download/tumulte-integration.zip",
+  "manifest": "__TUMULTE_MANIFEST_URL__",
+  "download": "__TUMULTE_DOWNLOAD_URL__",
   "readme": "README.md",
   "changelog": "CHANGELOG.md"
 }
