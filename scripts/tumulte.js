@@ -20,7 +20,7 @@ import CombatCollector from './collectors/combat-collector.js'
 import TumulteConnectionMenu from './apps/connection-menu.js'
 
 const MODULE_ID = 'tumulte-integration'
-const MODULE_VERSION = '2.0.4'
+const MODULE_VERSION = '2.0.6'
 
 /**
  * Main Tumulte Integration Class
@@ -60,6 +60,9 @@ class TumulteIntegration {
 
     // Register settings
     this.registerSettings()
+
+    // Run migrations if module version changed
+    await this.runMigrations()
 
     // Load server URL from settings, but only in dev mode (no build URL)
     // In staging/production, the build URL takes priority to prevent stale saved URLs
@@ -107,6 +110,41 @@ class TumulteIntegration {
 
     this.initialized = true
     Logger.info('Tumulte Integration initialized')
+  }
+
+  /**
+   * Run migrations when module version changes
+   * This ensures settings are updated when deploying new versions
+   */
+  async runMigrations() {
+    const savedVersion = game.settings.get(MODULE_ID, 'moduleVersion') || '0.0.0'
+
+    if (savedVersion === MODULE_VERSION) {
+      return // No migration needed
+    }
+
+    Logger.info('Module updated, running migrations...', {
+      from: savedVersion,
+      to: MODULE_VERSION
+    })
+
+    // Migration: Force server URL to build URL if available
+    // This prevents stale URLs from old installations
+    if (this.buildUrl) {
+      const currentUrl = game.settings.get(MODULE_ID, 'serverUrl')
+      if (currentUrl !== this.buildUrl) {
+        await game.settings.set(MODULE_ID, 'serverUrl', this.buildUrl)
+        this.serverUrl = this.buildUrl
+        Logger.info('Server URL migrated to build URL', {
+          oldUrl: currentUrl,
+          newUrl: this.buildUrl
+        })
+      }
+    }
+
+    // Save current version to prevent re-running migrations
+    await game.settings.set(MODULE_ID, 'moduleVersion', MODULE_VERSION)
+    Logger.info('Migration completed', { version: MODULE_VERSION })
   }
 
   /**
@@ -204,6 +242,14 @@ class TumulteIntegration {
         connectionId: null,
         apiKey: null
       }
+    })
+
+    // Module version tracking for migrations
+    game.settings.register(MODULE_ID, 'moduleVersion', {
+      scope: 'world',
+      config: false,
+      type: String,
+      default: ''
     })
   }
 
