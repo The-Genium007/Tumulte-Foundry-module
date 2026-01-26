@@ -225,6 +225,12 @@ export class PairingManager {
       await this.tokenStorage.storeConnectionId(data.connectionId)
       await this.tokenStorage.storeApiKey(data.apiKey)
 
+      // Store fingerprint for security validation on token refresh
+      if (data.fingerprint) {
+        await this.tokenStorage.storeFingerprint(data.fingerprint)
+        Logger.debug('Fingerprint stored from pairing', { fingerprintPreview: data.fingerprint.substring(0, 8) + '...' })
+      }
+
       const completedPairing = this.currentPairing
 
       // Clear pairing session
@@ -329,6 +335,12 @@ export class PairingManager {
       // Store API key if provided
       if (connection.apiKey) {
         await this.tokenStorage.storeApiKey(connection.apiKey)
+      }
+
+      // Store fingerprint for security validation on token refresh
+      if (tokens.fingerprint) {
+        await this.tokenStorage.storeFingerprint(tokens.fingerprint)
+        Logger.debug('Fingerprint stored from pairing', { fingerprintPreview: tokens.fingerprint.substring(0, 8) + '...' })
       }
 
       // Clear pairing session

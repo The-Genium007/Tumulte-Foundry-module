@@ -7,6 +7,14 @@
         <span class="tumulte-status connected">
           <i class="fas fa-circle"></i> Connected
         </span>
+      {{else if isWaitingReauthorization}}
+        <span class="tumulte-status waiting">
+          <i class="fas fa-circle-notch fa-spin"></i> Waiting for reauthorization...
+        </span>
+      {{else if isRevoked}}
+        <span class="tumulte-status revoked">
+          <i class="fas fa-ban"></i> Access Revoked
+        </span>
       {{else if isReconnecting}}
         <span class="tumulte-status reconnecting">
           <i class="fas fa-circle-notch fa-spin"></i> Reconnecting... ({{reconnectAttempts}}/{{maxReconnectAttempts}})
@@ -68,6 +76,31 @@
     </div>
   </div>
   {{else}}
+  {{!-- Revoked State - Show reauthorization options --}}
+  {{#if isRevoked}}
+  <div class="tumulte-revoked-section">
+    <p class="tumulte-revoked-message">
+      <i class="fas fa-exclamation-triangle"></i>
+      Access has been revoked on Tumulte. Ask the GM to reauthorize access from the Tumulte dashboard.
+    </p>
+
+    <div class="form-group tumulte-actions">
+      {{#if isWaitingReauthorization}}
+        <button type="button" class="tumulte-stop-waiting">
+          <i class="fas fa-stop"></i> Stop Waiting
+        </button>
+      {{else}}
+        <button type="button" class="tumulte-wait-reauthorization">
+          <i class="fas fa-clock"></i> Wait for Reauthorization
+        </button>
+      {{/if}}
+
+      <button type="button" class="tumulte-start-pairing">
+        <i class="fas fa-link"></i> New Pairing
+      </button>
+    </div>
+  </div>
+  {{else}}
   {{!-- Action Buttons --}}
   <div class="form-group tumulte-actions">
     {{#if isPaired}}
@@ -86,5 +119,6 @@
       </button>
     {{/if}}
   </div>
+  {{/if}}
   {{/if}}
 </form>

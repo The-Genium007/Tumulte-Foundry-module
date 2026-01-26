@@ -305,6 +305,7 @@ export class TumulteSocketClient extends EventTarget {
 
   /**
    * Refresh the session token using refresh token
+   * Includes fingerprint for security validation by the backend
    */
   async refreshToken() {
     const refreshToken = this.tokenStorage.getRefreshToken()
@@ -312,12 +313,18 @@ export class TumulteSocketClient extends EventTarget {
       throw new Error('No refresh token available')
     }
 
-    Logger.info('Refreshing session token...')
+    // Get fingerprint for security validation
+    const fingerprint = this.tokenStorage.getFingerprint()
+
+    Logger.info('Refreshing session token...', { hasFingerprint: !!fingerprint })
 
     const response = await fetch(`${this.serverUrl}/mj/vtt-connections/refresh-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken })
+      body: JSON.stringify({
+        refreshToken,
+        fingerprint // Backend validates this to prevent token theft
+      })
     })
 
     if (!response.ok) {
@@ -358,6 +365,64 @@ export class TumulteSocketClient extends EventTarget {
     this.reconnectAttempts = 0
 
     Logger.info('Disconnected from Tumulte')
+  }
+
+  /**
+   * Check if the connection has been reauthorized on Tumulte
+   * The module polls this endpoint when in revoked state to detect reauthorization
+   * Returns the new tokens if reauthorized, or the current status
+   */
+  async checkReauthorizationStatus() {
+    try {
+      const response = await fetch(
+        `${this.serverUrl}/webhooks/foundry/reauthorization-status?worldId=${encodeURIComponent(this.worldId)}`,
+        { method: 'GET' }
+      )
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: 'Unknown error' }))
+        return { status: 'error', error: error.error || `HTTP ${response.status}` }
+      }
+
+      const data = await response.json()
+
+      if (data.status === 'reauthorized') {
+        Logger.info('Connection reauthorized! Storing new tokens...')
+
+        // Store the new tokens
+        await this.tokenStorage.storeTokens(
+          data.sessionToken,
+          data.refreshToken,
+          data.expiresIn
+        )
+
+        // Update connection info if needed
+        if (data.connectionId) {
+          await this.tokenStorage.storeConnectionId(data.connectionId)
+        }
+        if (data.apiKey) {
+          await this.tokenStorage.storeApiKey(data.apiKey)
+        }
+
+        // Store fingerprint for security validation on future token refresh
+        if (data.fingerprint) {
+          await this.tokenStorage.storeFingerprint(data.fingerprint)
+          Logger.debug('Fingerprint stored from reauthorization', { fingerprintPreview: data.fingerprint.substring(0, 8) + '...' })
+        }
+
+        return {
+          status: 'reauthorized',
+          connectionId: data.connectionId,
+          serverUrl: data.serverUrl,
+          reauthorizedAt: data.reauthorizedAt
+        }
+      }
+
+      return data
+    } catch (error) {
+      Logger.warn('Failed to check reauthorization status', error.message)
+      return { status: 'error', error: error.message }
+    }
   }
 
   /**
