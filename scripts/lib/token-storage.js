@@ -99,6 +99,28 @@ export class TokenStorage {
   }
 
   /**
+   * Store fingerprint for security validation on token refresh
+   * The fingerprint is generated from worldId + moduleVersion and validated by the backend
+   * to detect token theft across different Foundry instances
+   * @param {string} fingerprint - Security fingerprint hash
+   * @returns {Promise<void>}
+   */
+  async storeFingerprint(fingerprint) {
+    const credentials = this.#getCredentials()
+    credentials.fingerprint = fingerprint
+    await this.#setCredentials(credentials)
+    Logger.debug('Fingerprint stored', { worldId: this.worldId })
+  }
+
+  /**
+   * Get stored fingerprint for token refresh validation
+   * @returns {string|null}
+   */
+  getFingerprint() {
+    return this.#getCredentials().fingerprint
+  }
+
+  /**
    * Get the session token
    * @returns {string|null}
    */
@@ -171,7 +193,8 @@ export class TokenStorage {
       refreshToken: null,
       tokenExpiry: null,
       connectionId: null,
-      apiKey: null
+      apiKey: null,
+      fingerprint: null
     })
     Logger.info('Tokens cleared for world', { worldId: this.worldId })
   }
@@ -196,6 +219,7 @@ export class TokenStorage {
     const sessionToken = this.getSessionToken()
     const refreshToken = this.getRefreshToken()
     const apiKey = this.getApiKey()
+    const fingerprint = this.getFingerprint()
 
     return {
       worldId: this.worldId,
@@ -203,8 +227,10 @@ export class TokenStorage {
       hasSessionToken: !!sessionToken,
       hasRefreshToken: !!refreshToken,
       hasApiKey: !!apiKey,
+      hasFingerprint: !!fingerprint,
       sessionTokenPreview: sessionToken ? `${sessionToken.substring(0, 20)}...` : null,
       apiKeyPreview: apiKey ? `${apiKey.substring(0, 10)}...` : null,
+      fingerprintPreview: fingerprint ? `${fingerprint.substring(0, 8)}...` : null,
       connectionId: this.getConnectionId(),
       expiresIn: this.getTimeUntilExpiry(),
       isExpired: this.isTokenExpired()
