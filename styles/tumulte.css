@@ -750,3 +750,68 @@
 .tumulte-cancel-pairing:hover {
   background: var(--tumulte-danger-hover);
 }
+
+/* Revoked status */
+.tumulte-connection-form .tumulte-status.revoked {
+  background: rgba(239, 68, 68, 0.15);
+  color: #dc2626;
+}
+
+.tumulte-connection-form .tumulte-status.revoked i {
+  color: var(--tumulte-danger);
+}
+
+.tumulte-connection-form .tumulte-status.waiting {
+  background: rgba(245, 158, 11, 0.15);
+  color: #b45309;
+}
+
+.tumulte-connection-form .tumulte-status.waiting i {
+  color: var(--tumulte-warning);
+}
+
+/* Revoked section */
+.tumulte-revoked-section {
+  background: rgba(239, 68, 68, 0.05);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: var(--tumulte-radius-lg);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.tumulte-revoked-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 16px 0;
+  padding: 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: var(--tumulte-radius);
+  font-size: 13px;
+  color: #dc2626;
+  line-height: 1.5;
+}
+
+.tumulte-revoked-message i {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--tumulte-danger);
+}
+
+.tumulte-wait-reauthorization {
+  background: var(--tumulte-warning);
+  color: white;
+}
+
+.tumulte-wait-reauthorization:hover {
+  background: #d97706;
+}
+
+.tumulte-stop-waiting {
+  background: var(--tumulte-gray-600);
+  color: white;
+}
+
+.tumulte-stop-waiting:hover {
+  background: var(--tumulte-gray-700);
+}

@@ -16,6 +16,8 @@ export class TumulteConnectionMenu extends FormApplication {
     super(object, options)
     this.pairingInfo = null
     this.countdownInterval = null
+    this.reauthorizationPollInterval = null
+    this.isRevoked = false
   }
 
   static get defaultOptions() {
@@ -58,7 +60,9 @@ export class TumulteConnectionMenu extends FormApplication {
       isPairing: pairingStatus.active,
       pairingCode: pairingStatus.code || null,
       pairingRemainingSeconds: pairingStatus.remainingSeconds || 0,
-      connectionId: tumulte?.tokenStorage?.getConnectionId() || null
+      connectionId: tumulte?.tokenStorage?.getConnectionId() || null,
+      isRevoked: this.isRevoked,
+      isWaitingReauthorization: this.reauthorizationPollInterval !== null
     }
   }
 
@@ -98,8 +102,24 @@ export class TumulteConnectionMenu extends FormApplication {
       await this._onReconnect()
     })
 
+    // Wait for reauthorization button
+    html.find('.tumulte-wait-reauthorization').on('click', async (event) => {
+      event.preventDefault()
+      await this._onWaitReauthorization()
+    })
+
+    // Stop waiting for reauthorization button
+    html.find('.tumulte-stop-waiting').on('click', (event) => {
+      event.preventDefault()
+      this._stopReauthorizationPolling()
+      this.render(true)
+    })
+
     // Start countdown if pairing is active
     this._startCountdownIfNeeded()
+
+    // Check revocation status on open if paired but not connected
+    this._checkRevocationStatus()
   }
 
   /**
@@ -213,6 +233,100 @@ export class TumulteConnectionMenu extends FormApplication {
   }
 
   /**
+   * Check if connection is revoked on open
+   */
+  async _checkRevocationStatus() {
+    const tumulte = window.tumulte
+    if (!tumulte?.tokenStorage?.isPaired()) return
+    if (tumulte?.socketClient?.connected) return
+
+    try {
+      const healthStatus = await tumulte.socketClient.checkConnectionHealth()
+      if (healthStatus.status === 'revoked') {
+        this.isRevoked = true
+        this.render(true)
+      }
+    } catch (error) {
+      Logger.warn('Failed to check revocation status', error)
+    }
+  }
+
+  /**
+   * Start waiting for reauthorization (polling)
+   */
+  async _onWaitReauthorization() {
+    const tumulte = window.tumulte
+    if (!tumulte) return
+
+    ui.notifications.info('Waiting for GM to reauthorize access on Tumulte...')
+
+    this._startReauthorizationPolling()
+    this.render(true)
+  }
+
+  /**
+   * Start polling for reauthorization status
+   */
+  _startReauthorizationPolling() {
+    if (this.reauthorizationPollInterval) {
+      clearInterval(this.reauthorizationPollInterval)
+    }
+
+    const POLL_INTERVAL = 3000 // 3 seconds
+
+    this.reauthorizationPollInterval = setInterval(async () => {
+      await this._checkReauthorizationStatus()
+    }, POLL_INTERVAL)
+
+    // Also check immediately
+    this._checkReauthorizationStatus()
+  }
+
+  /**
+   * Stop polling for reauthorization
+   */
+  _stopReauthorizationPolling() {
+    if (this.reauthorizationPollInterval) {
+      clearInterval(this.reauthorizationPollInterval)
+      this.reauthorizationPollInterval = null
+    }
+  }
+
+  /**
+   * Check if reauthorization has been granted
+   */
+  async _checkReauthorizationStatus() {
+    const tumulte = window.tumulte
+    if (!tumulte) return
+
+    try {
+      const result = await tumulte.socketClient.checkReauthorizationStatus()
+
+      if (result.status === 'reauthorized') {
+        Logger.info('Connection reauthorized!', result)
+        this._stopReauthorizationPolling()
+        this.isRevoked = false
+
+        // Connect to WebSocket with new tokens
+        await tumulte.connect()
+
+        this.render(true)
+        ui.notifications.info('Connection reauthorized! Reconnected to Tumulte.')
+      } else if (result.status === 'still_revoked') {
+        Logger.debug('Still waiting for reauthorization...')
+      } else if (result.status === 'already_active') {
+        // Connection is active, try to connect
+        this._stopReauthorizationPolling()
+        this.isRevoked = false
+        await tumulte.connect()
+        this.render(true)
+      }
+    } catch (error) {
+      Logger.warn('Error checking reauthorization status', error)
+    }
+  }
+
+  /**
    * Start countdown timer if pairing is active
    */
   _startCountdownIfNeeded() {
@@ -255,6 +369,7 @@ export class TumulteConnectionMenu extends FormApplication {
    */
   async close(options = {}) {
     this._stopCountdown()
+    this._stopReauthorizationPolling()
     return super.close(options)
   }
 

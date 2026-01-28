@@ -5,6 +5,20 @@ All notable changes to the Tumulte Integration module will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.7] - 2025-01-26
+
+### Added
+- Reauthorization flow: When access is revoked on Tumulte, the module now detects this state
+- "Wait for Reauthorization" button that polls for GM reauthorization without new pairing
+- Automatic reconnection when GM reauthorizes access from Tumulte dashboard
+- New "revoked" status indicator in connection menu
+- Clear messaging for revoked state with instructions for GM
+
+### Changed
+- Improved connection health check to detect and display revoked state
+- Updated connection menu UI with revocation handling
+- Better separation between "disconnected" and "revoked" states
+
 ## [2.0.4] - 2025-01-21
 
 ### Added

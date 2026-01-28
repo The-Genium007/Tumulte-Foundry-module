@@ -20,7 +20,7 @@ import CombatCollector from './collectors/combat-collector.js'
 import TumulteConnectionMenu from './apps/connection-menu.js'
 
 const MODULE_ID = 'tumulte-integration'
-const MODULE_VERSION = '2.0.6'
+const MODULE_VERSION = '2.0.7'
 
 /**
  * Main Tumulte Integration Class
@@ -41,6 +41,7 @@ class TumulteIntegration {
     // State
     this.initialized = false
     this.worldId = null
+    this.reauthorizationPollInterval = null
     // Build URL - placeholder is replaced by CI/CD for staging/prod
     // If placeholder is still present, we're in local dev mode
     const configuredUrl = '__TUMULTE_API_URL__'
@@ -101,6 +102,18 @@ class TumulteIntegration {
     if (this.tokenStorage.isPaired()) {
       Logger.info('Found existing pairing, attempting to connect...')
       try {
+        // First check connection health to detect revocation before attempting WebSocket
+        const healthStatus = await this.socketClient.checkConnectionHealth()
+
+        if (healthStatus.status === 'revoked') {
+          Logger.warn('Connection is revoked, starting automatic reauthorization polling')
+          // Start polling automatically in background - reconnection will happen without user action
+          this.startReauthorizationPolling()
+          // Also show dialog to inform the user
+          this.showRevocationDialog(healthStatus.message)
+          return
+        }
+
         await this.connect()
       } catch (error) {
         Logger.error('Auto-connect failed', error)
@@ -489,6 +502,130 @@ class TumulteIntegration {
       connectionId: this.tokenStorage.getConnectionId(),
       serverUrl: this.serverUrl
     }
+  }
+
+  /**
+   * Start polling for reauthorization status
+   * Called automatically when connection is revoked at startup
+   * Will auto-reconnect when GM reauthorizes from Tumulte dashboard
+   */
+  startReauthorizationPolling() {
+    // Don't start if already polling
+    if (this.reauthorizationPollInterval) {
+      Logger.debug('Reauthorization polling already active')
+      return
+    }
+
+    const POLL_INTERVAL = 3000 // 3 seconds
+
+    Logger.info('Starting reauthorization polling...')
+
+    this.reauthorizationPollInterval = setInterval(async () => {
+      await this._checkReauthorizationStatus()
+    }, POLL_INTERVAL)
+
+    // Check immediately too
+    this._checkReauthorizationStatus()
+  }
+
+  /**
+   * Stop reauthorization polling
+   */
+  stopReauthorizationPolling() {
+    if (this.reauthorizationPollInterval) {
+      clearInterval(this.reauthorizationPollInterval)
+      this.reauthorizationPollInterval = null
+      Logger.info('Reauthorization polling stopped')
+    }
+  }
+
+  /**
+   * Check reauthorization status (internal method for polling)
+   */
+  async _checkReauthorizationStatus() {
+    try {
+      const result = await this.socketClient.checkReauthorizationStatus()
+
+      if (result.status === 'reauthorized') {
+        Logger.info('Connection reauthorized via polling!', result)
+        this.stopReauthorizationPolling()
+
+        // Connect with new tokens
+        await this.connect()
+        ui.notifications.info('Connexion réautorisée ! Reconnecté à Tumulte.')
+      } else if (result.status === 'already_active') {
+        Logger.info('Connection already active, connecting...')
+        this.stopReauthorizationPolling()
+
+        await this.connect()
+        ui.notifications.info('Connexion rétablie !')
+      } else {
+        Logger.debug('Still waiting for reauthorization...', { status: result.status })
+      }
+    } catch (error) {
+      Logger.warn('Error checking reauthorization status', error)
+    }
+  }
+
+  /**
+   * Show revocation dialog with reauthorization polling
+   * Note: Polling is already started automatically, this dialog is informational
+   */
+  showRevocationDialog(message) {
+    let dialog = null
+
+    // Listen for successful reconnection to close the dialog
+    const onConnected = () => {
+      if (dialog) {
+        dialog.close()
+      }
+    }
+
+    // Register one-time listener
+    this.socketClient.addEventListener('connected', onConnected, { once: true })
+
+    dialog = new Dialog({
+      title: 'Connexion Tumulte Révoquée',
+      content: `
+        <div style="text-align: center; padding: 15px;">
+          <i class="fas fa-ban fa-3x" style="color: #e74c3c; margin-bottom: 15px;"></i>
+          <p style="font-size: 14px; margin-bottom: 10px;">
+            ${message || "L'accès à Tumulte a été révoqué."}
+          </p>
+          <p style="font-size: 12px; color: #666; margin-bottom: 15px;">
+            Demandez au GM de réautoriser l'accès depuis le tableau de bord Tumulte.
+          </p>
+          <p style="font-size: 12px; color: #3498db;">
+            <i class="fas fa-circle-notch fa-spin"></i> En attente de réautorisation...
+          </p>
+        </div>
+      `,
+      buttons: {
+        newPairing: {
+          icon: '<i class="fas fa-link"></i>',
+          label: 'Nouveau pairing',
+          callback: () => {
+            this.stopReauthorizationPolling()
+            new TumulteConnectionMenu().render(true)
+          }
+        },
+        close: {
+          icon: '<i class="fas fa-times"></i>',
+          label: 'Fermer',
+          callback: () => {
+            // Keep polling in background even if dialog is closed
+            Logger.info('Dialog closed, polling continues in background')
+          }
+        }
+      },
+      default: 'close',
+      close: () => {
+        // Remove the listener if dialog is closed manually
+        this.socketClient.removeEventListener('connected', onConnected)
+      }
+    })
+
+    dialog.render(true)
   }
 }
 
