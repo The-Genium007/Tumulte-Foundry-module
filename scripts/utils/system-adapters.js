@@ -5,6 +5,7 @@
 
 import Logger from './logger.js'
 import { createFlavorParser } from './flavor-parser.js'
+import { extractUniversalRollData } from './term-extractor.js'
 
 /**
  * Base adapter with generic implementation
@@ -31,6 +32,7 @@ class GenericAdapter {
 
   /**
    * Extract roll data from a chat message
+   * Now uses Universal Term Extractor for complete dice data
    */
   extractRollData(message, roll) {
     const speaker = message.speaker
@@ -44,21 +46,25 @@ class GenericAdapter {
       rollOptions: roll.options
     })
 
-    const diceResults = this.extractDiceResults(roll)
-    const isCritical = this.detectCritical(roll)
-    const criticalType = isCritical ? this.detectCriticalType(roll) : null
+    // Use universal term extractor for detailed dice data
+    const universalData = extractUniversalRollData(message, roll)
+
+    // Legacy extraction for backwards compatibility
+    const legacyDiceResults = this.extractDiceResults(roll)
     const rollType = this.detectRollType(roll, message)
 
     // Parse flavor text for enriched data
     const parsedFlavor = this.parseFlavorText(message.flavor)
 
-    Logger.info('Roll analysis complete', {
-      diceResults,
-      isCritical,
-      criticalType,
+    Logger.info('Roll analysis complete (with universal extraction)', {
+      diceResults: universalData.diceResults,
+      termsCount: universalData.terms.length,
+      isCritical: universalData.isCritical,
+      criticalType: universalData.criticalType,
       rollType,
       formula: roll.formula,
       total: roll.total,
+      systemData: universalData.systemData,
       parsedFlavor: {
         skill: parsedFlavor.skill,
         ability: parsedFlavor.ability,
@@ -72,12 +78,16 @@ class GenericAdapter {
       rollId: message.id,
       rollFormula: roll.formula,
       result: roll.total,
-      diceResults,
-      isCritical,
-      criticalType,
+      // Use universal extraction results (more complete)
+      diceResults: universalData.diceResults.length > 0 ? universalData.diceResults : legacyDiceResults,
+      isCritical: universalData.isCritical,
+      criticalType: universalData.criticalType,
       isHidden: message.whisper?.length > 0,
       rollType: parsedFlavor.rollType || rollType, // Prefer parsed roll type
-      // NEW: Enriched flavor data
+      // NEW: Universal term data for advanced rendering
+      terms: universalData.terms,
+      systemData: universalData.systemData,
+      // Enriched flavor data
       skill: parsedFlavor.skill,
       skillRaw: parsedFlavor.skillRaw,
       ability: parsedFlavor.ability,
@@ -88,6 +98,7 @@ class GenericAdapter {
         foundryActorId: actor?.id,
         flavor: message.flavor,
         system: game.system.id,
+        systemId: universalData.systemId,
         timestamp: Date.now(),
         parsedFlavor: parsedFlavor // Include full parsed data for debugging
       }
