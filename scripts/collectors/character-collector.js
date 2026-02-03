@@ -1,10 +1,12 @@
 /**
  * Character Collector
  * Synchronizes character data from Foundry VTT to Tumulte
+ * Supports multiple game systems with PC/NPC/Monster classification
  */
 
 import Logger from '../utils/logger.js'
 import { getSystemAdapter } from '../utils/system-adapters.js'
+import { classifyActor, shouldSyncActor as checkShouldSync, hasSystemSupport, getSystemConfig } from '../utils/actor-classifier.js'
 
 export class CharacterCollector {
   constructor(socketClient) {
@@ -39,7 +41,7 @@ export class CharacterCollector {
   }
 
   /**
-   * Sync all player characters
+   * Sync all characters (PCs, NPCs, and Monsters)
    */
   async syncAllCharacters() {
     if (!game.actors) {
@@ -47,91 +49,60 @@ export class CharacterCollector {
       return
     }
 
-    // Log all available actor types for debugging
-    const actorTypes = new Set()
-    game.actors.forEach(actor => actorTypes.add(actor.type))
-    Logger.info('Available actor types in this system', {
-      system: game.system.id,
-      types: Array.from(actorTypes)
+    // Log system support status
+    const systemId = game.system.id
+    const hasDedicatedSupport = hasSystemSupport()
+    Logger.info(`System detection: ${systemId}`, {
+      hasDedicatedSupport,
+      config: getSystemConfig()
     })
 
-    const playerCharacters = game.actors.filter(actor =>
-      this.shouldSyncActor(actor)
-    )
+    // Log all available actor types with classification for debugging
+    const actorsByClassification = { pc: [], npc: [], monster: [], excluded: [] }
+    game.actors.forEach(actor => {
+      if (!checkShouldSync(actor)) {
+        actorsByClassification.excluded.push({ name: actor.name, type: actor.type })
+      } else {
+        const classification = classifyActor(actor)
+        actorsByClassification[classification].push({ name: actor.name, type: actor.type })
+      }
+    })
 
-    Logger.info(`Syncing ${playerCharacters.length} characters...`, {
-      system: game.system.id,
+    Logger.info('Actor classification summary', {
+      system: systemId,
+      totalActors: game.actors.size,
+      pcs: actorsByClassification.pc.length,
+      npcs: actorsByClassification.npc.length,
+      monsters: actorsByClassification.monster.length,
+      excluded: actorsByClassification.excluded.length,
+      details: actorsByClassification
+    })
+
+    const charactersToSync = game.actors.filter(actor => checkShouldSync(actor))
+
+    Logger.info(`Syncing ${charactersToSync.length} characters...`, {
+      system: systemId,
       totalActors: game.actors.size
     })
 
-    for (const actor of playerCharacters) {
+    for (const actor of charactersToSync) {
       await this.syncCharacter(actor)
     }
 
-    Logger.info('Character sync complete', { syncedCount: playerCharacters.length })
+    Logger.info('Character sync complete', { syncedCount: charactersToSync.length })
   }
 
-  /**
-   * Check if actor type indicates a Player Character based on system conventions
-   * Different systems use different type names for PCs vs NPCs
-   */
-  isActorTypePC(actor) {
-    const actorType = actor.type?.toLowerCase()
-
-    // Common PC type names across systems
-    const pcTypes = [
-      'character',  // D&D 5e, PF2e, and most systems
-      'pc',         // Some systems use 'pc' directly
-      'player',     // Alternative naming
-    ]
-
-    return pcTypes.includes(actorType)
-  }
-
-  /**
-   * Determine if an actor should be synced
-   * Syncs ALL actors (PCs and NPCs) to allow GM to incarnate any character
-   */
-  shouldSyncActor(actor) {
-    // Exclude certain system actors that shouldn't be synced
-    const excludedTypes = [
-      'vehicle',        // Vehicles are not characters
-      'hazard',         // PF2e hazards
-      'loot',           // Loot containers
-      'party',          // Party sheets
-    ]
-
-    if (excludedTypes.includes(actor.type?.toLowerCase())) {
-      Logger.debug('Actor excluded by type', { name: actor.name, type: actor.type })
-      return false
-    }
-
-    // Sync all other actors (PCs and NPCs)
-    // The characterType (pc/npc) will be determined by hasPlayerOwner
-    Logger.debug('Actor will be synced', {
-      name: actor.name,
-      type: actor.type,
-      hasPlayerOwner: actor.hasPlayerOwner,
-      characterType: actor.hasPlayerOwner ? 'pc' : 'npc'
-    })
-    return true
-  }
 
   /**
    * Sync a single character to Tumulte
    */
   async syncCharacter(actor) {
     try {
-      // Build absolute URL for avatar image
-      const avatarUrl = actor.img ? this.buildAbsoluteUrl(actor.img) : null
+      // Normalize avatar path (relative only, no localhost URLs)
+      const avatarUrl = actor.img ? this.normalizeAvatarPath(actor.img) : null
 
-      // Determine character type using multiple strategies:
-      // 1. If actor has a player owner, it's definitely a PC
-      // 2. Otherwise, use the actor's type from the system:
-      //    - D&D 5e: 'character' = PC, 'npc' = NPC
-      //    - PF2e: 'character' = PC, 'npc' = NPC
-      //    - Generic: actor.type === 'character' or similar
-      const isPC = actor.hasPlayerOwner || this.isActorTypePC(actor)
+      // Classify actor using multi-system classifier (pc, npc, or monster)
+      const characterType = classifyActor(actor)
 
       const characterData = {
         worldId: game.world.id,
@@ -139,7 +110,7 @@ export class CharacterCollector {
         characterId: actor.id,
         name: actor.name,
         avatarUrl,
-        characterType: isPC ? 'pc' : 'npc',
+        characterType,
         stats: this.systemAdapter.extractStats(actor),
         inventory: this.systemAdapter.extractInventory(actor),
         vttData: {
@@ -152,7 +123,7 @@ export class CharacterCollector {
       Logger.info('Sending character:update', {
         characterId: actor.id,
         name: actor.name,
-        characterType: characterData.characterType,
+        characterType,
         campaignId: characterData.campaignId
       })
 
@@ -176,7 +147,7 @@ export class CharacterCollector {
    * Handle actor update
    */
   onActorUpdate(actor, changes, options, userId) {
-    if (!this.shouldSyncActor(actor)) return
+    if (!checkShouldSync(actor)) return
 
     // Debounce updates to prevent spam
     this.debouncedSync(actor)
@@ -186,7 +157,7 @@ export class CharacterCollector {
    * Handle actor creation
    */
   onActorCreate(actor, options, userId) {
-    if (!this.shouldSyncActor(actor)) return
+    if (!checkShouldSync(actor)) return
 
     // Sync new character after a short delay
     setTimeout(() => this.syncCharacter(actor), 1000)
@@ -214,7 +185,7 @@ export class CharacterCollector {
   onItemChange(item, options, userId) {
     const actor = item.parent
     if (!actor || actor.documentName !== 'Actor') return
-    if (!this.shouldSyncActor(actor)) return
+    if (!checkShouldSync(actor)) return
 
     // Debounce inventory updates
     this.debouncedSync(actor)
@@ -265,21 +236,37 @@ export class CharacterCollector {
   }
 
   /**
-   * Build absolute URL from relative Foundry path
-   * Handles both relative paths and already absolute URLs
+   * Normalize avatar path for storage
+   * Stores relative paths only - absolute URLs are converted to relative
+   * This avoids Mixed Content issues when displaying from HTTPS
+   *
+   * @param {string} path - The image path from Foundry
+   * @returns {string|null} - Relative path or null
    */
-  buildAbsoluteUrl(path) {
+  normalizeAvatarPath(path) {
     if (!path) return null
 
-    // Already an absolute URL
+    // If it's an absolute URL pointing to this Foundry instance, extract the path
     if (path.startsWith('http://') || path.startsWith('https://')) {
-      return path
+      try {
+        const url = new URL(path)
+        // Only extract path if it's from the same Foundry instance
+        if (url.origin === window.location.origin) {
+          return url.pathname
+        }
+        // External URLs (like S3, CDN) - keep as-is if HTTPS
+        if (path.startsWith('https://')) {
+          return path
+        }
+        // HTTP external URLs - return null to use fallback
+        return null
+      } catch {
+        return null
+      }
     }
 
-    // Build absolute URL using Foundry's origin
-    const origin = window.location.origin
-    const cleanPath = path.startsWith('/') ? path : `/${path}`
-    return `${origin}${cleanPath}`
+    // Already a relative path - normalize it
+    return path.startsWith('/') ? path : `/${path}`
   }
 }
 
