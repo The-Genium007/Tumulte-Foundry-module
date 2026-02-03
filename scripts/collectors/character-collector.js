@@ -72,43 +72,49 @@ export class CharacterCollector {
   }
 
   /**
-   * Determine if an actor should be synced
-   * Supports multiple game systems with different actor type conventions
+   * Check if actor type indicates a Player Character based on system conventions
+   * Different systems use different type names for PCs vs NPCs
    */
-  shouldSyncActor(actor) {
-    // Common PC actor types across different systems
+  isActorTypePC(actor) {
+    const actorType = actor.type?.toLowerCase()
+
+    // Common PC type names across systems
     const pcTypes = [
-      'character',      // D&D 5e, PF2e, and many others
-      'personnage',     // French systems (Chroniques Oubliées, etc.)
-      'pc',             // Some systems use 'pc' directly
-      'player',         // Alternative naming
-      'protagonist',    // Narrative systems
-      'investigator',   // Call of Cthulhu
-      'traveller',      // Traveller RPG
-      'explorer',       // Some sci-fi systems
+      'character',  // D&D 5e, PF2e, and most systems
+      'pc',         // Some systems use 'pc' directly
+      'player',     // Alternative naming
     ]
 
-    // Check if actor type matches any known PC type
-    if (pcTypes.includes(actor.type?.toLowerCase())) {
-      Logger.debug('Actor matches PC type', { name: actor.name, type: actor.type })
-      return true
+    return pcTypes.includes(actorType)
+  }
+
+  /**
+   * Determine if an actor should be synced
+   * Syncs ALL actors (PCs and NPCs) to allow GM to incarnate any character
+   */
+  shouldSyncActor(actor) {
+    // Exclude certain system actors that shouldn't be synced
+    const excludedTypes = [
+      'vehicle',        // Vehicles are not characters
+      'hazard',         // PF2e hazards
+      'loot',           // Loot containers
+      'party',          // Party sheets
+    ]
+
+    if (excludedTypes.includes(actor.type?.toLowerCase())) {
+      Logger.debug('Actor excluded by type', { name: actor.name, type: actor.type })
+      return false
     }
 
-    // Sync any actor that has a player owner (regardless of type)
-    // This catches edge cases where the type naming is unusual
-    if (actor.hasPlayerOwner) {
-      Logger.debug('Actor has player owner', { name: actor.name, type: actor.type })
-      return true
-    }
-
-    // Optionally sync NPCs with specific flags
-    if (actor.getFlag('tumulte-integration', 'syncToTumulte')) {
-      Logger.debug('Actor has syncToTumulte flag', { name: actor.name, type: actor.type })
-      return true
-    }
-
-    Logger.debug('Actor not synced', { name: actor.name, type: actor.type, hasPlayerOwner: actor.hasPlayerOwner })
-    return false
+    // Sync all other actors (PCs and NPCs)
+    // The characterType (pc/npc) will be determined by hasPlayerOwner
+    Logger.debug('Actor will be synced', {
+      name: actor.name,
+      type: actor.type,
+      hasPlayerOwner: actor.hasPlayerOwner,
+      characterType: actor.hasPlayerOwner ? 'pc' : 'npc'
+    })
+    return true
   }
 
   /**
@@ -119,9 +125,13 @@ export class CharacterCollector {
       // Build absolute URL for avatar image
       const avatarUrl = actor.img ? this.buildAbsoluteUrl(actor.img) : null
 
-      // Determine character type based on actor type or player ownership
-      const pcTypes = ['character', 'pc', 'personnage', 'investigator', 'protagonist', 'player']
-      const isPC = pcTypes.includes(actor.type?.toLowerCase()) || actor.hasPlayerOwner
+      // Determine character type using multiple strategies:
+      // 1. If actor has a player owner, it's definitely a PC
+      // 2. Otherwise, use the actor's type from the system:
+      //    - D&D 5e: 'character' = PC, 'npc' = NPC
+      //    - PF2e: 'character' = PC, 'npc' = NPC
+      //    - Generic: actor.type === 'character' or similar
+      const isPC = actor.hasPlayerOwner || this.isActorTypePC(actor)
 
       const characterData = {
         worldId: game.world.id,
