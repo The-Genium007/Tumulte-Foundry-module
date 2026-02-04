@@ -636,6 +636,161 @@ const SYSTEM_ACTOR_CONFIG = {
     monsterTypes: ['monster', 'creature'],
     excludedTypes: [],
     classifyNpcVsMonster: null
+  },
+
+  // ============================================
+  // Delta Green (CoC-based horror)
+  // ============================================
+  'deltagreen': {
+    pcTypes: ['character', 'agent'],
+    npcTypes: ['npc'],
+    monsterTypes: ['creature', 'unnatural'],
+    excludedTypes: [],
+    classifyNpcVsMonster: null
+  },
+
+  // ============================================
+  // World of Darkness 5e (Vampire V5, Hunter, Werewolf)
+  // ============================================
+  'wod5e': {
+    pcTypes: ['vampire', 'mortal', 'ghoul', 'hunter', 'werewolf', 'changeling'],
+    npcTypes: ['spc'],  // Secondary/Supporting Characters
+    monsterTypes: ['creature'],
+    excludedTypes: ['cell', 'coterie', 'group'],
+    classifyNpcVsMonster: null
+  },
+
+  // ============================================
+  // Chronicles of Darkness 2e (Mage, Vampire, etc.)
+  // ============================================
+  'mta': {
+    pcTypes: ['mage', 'vampire', 'changeling', 'werewolf', 'hunter', 'mortal', 'sleepwalker', 'proximi'],
+    npcTypes: ['sleepwalker', 'mortal'],
+    monsterTypes: ['ephemeral', 'spirit', 'demon', 'horror'],
+    excludedTypes: [],
+    classifyNpcVsMonster: null
+  },
+
+  // ============================================
+  // Shadowrun 6th Edition
+  // ============================================
+  'shadowrun6-eden': {
+    pcTypes: ['character'],
+    npcTypes: ['npc'],
+    monsterTypes: ['critter'],
+    excludedTypes: ['vehicle', 'host', 'device', 'sprite', 'ic'],
+    classifyNpcVsMonster: null
+  },
+
+  // ============================================
+  // Shadowrun 5th Edition
+  // ============================================
+  'shadowrun5e': {
+    pcTypes: ['character'],
+    npcTypes: ['npc', 'spirit'],
+    monsterTypes: ['critter'],
+    excludedTypes: ['vehicle', 'host', 'device'],
+    classifyNpcVsMonster: null
+  },
+
+  // ============================================
+  // Ars Magica 5e
+  // ============================================
+  'arm5e': {
+    pcTypes: ['magus', 'companion', 'grog'],
+    npcTypes: ['npc'],
+    monsterTypes: ['creature', 'beast'],
+    excludedTypes: ['covenant', 'laboratory'],
+    classifyNpcVsMonster: null
+  },
+
+  // ============================================
+  // Pendragon 6th Edition
+  // ============================================
+  'pendragon': {
+    pcTypes: ['character', 'knight'],
+    npcTypes: ['npc'],
+    monsterTypes: ['creature', 'beast'],
+    excludedTypes: ['manor', 'holding'],
+    classifyNpcVsMonster: null
+  },
+
+  // ============================================
+  // Legend of the Five Rings 5e
+  // ============================================
+  'l5r5e': {
+    pcTypes: ['character'],
+    npcTypes: ['npc'],
+    monsterTypes: ['creature', 'mahō'],
+    excludedTypes: ['army'],
+    classifyNpcVsMonster: null
+  },
+
+  // ============================================
+  // RuneQuest: Roleplaying in Glorantha
+  // ============================================
+  'rqg': {
+    pcTypes: ['character'],
+    npcTypes: ['character'],  // RQG uses one type for all
+    monsterTypes: [],
+    excludedTypes: [],
+    // RQG uses hasPlayerOwner for PC detection
+    classifyNpcVsMonster: null
+  },
+
+  // ============================================
+  // Mythras
+  // ============================================
+  'mythras': {
+    pcTypes: ['character'],
+    npcTypes: ['npc'],
+    monsterTypes: ['creature'],
+    excludedTypes: [],
+    classifyNpcVsMonster: null
+  },
+
+  // ============================================
+  // Dark Heresy 2nd Edition (Warhammer 40k)
+  // ============================================
+  'dark-heresy': {
+    pcTypes: ['acolyte', 'character'],
+    npcTypes: ['npc'],
+    monsterTypes: ['creature', 'daemon'],
+    excludedTypes: ['vehicle'],
+    classifyNpcVsMonster: null
+  },
+
+  // ============================================
+  // Wrath & Glory (Warhammer 40k)
+  // ============================================
+  'wrath-and-glory': {
+    pcTypes: ['agent', 'character'],
+    npcTypes: ['npc'],
+    monsterTypes: ['threat', 'creature'],
+    excludedTypes: ['vehicle', 'voidship'],
+    classifyNpcVsMonster: null
+  },
+
+  // ============================================
+  // Cypher System (Numenera, The Strange, etc.)
+  // ============================================
+  'cyphersystem': {
+    pcTypes: ['pc', 'character'],
+    npcTypes: ['npc'],
+    monsterTypes: ['creature', 'community'],  // Cypher uses 'community' for large threats
+    excludedTypes: ['marker', 'vehicle'],
+    classifyNpcVsMonster: null
+  },
+
+  // ============================================
+  // Paranoia (Perfect Edition)
+  // ============================================
+  'paranoia': {
+    pcTypes: ['troubleshooter'],
+    npcTypes: ['npc-somebody', 'npc-accomplice'],
+    monsterTypes: ['npc-nobody'],  // Expendable NPCs are "monsters"
+    excludedTypes: [],
+    classifyNpcVsMonster: null
   }
 }
 
@@ -656,12 +811,26 @@ const GENERIC_CONFIG = {
     'traveller',      // Traveller RPG
     'pilot',          // Lancer, mech games
     'mutant',         // Mutant Year Zero
-    'agent',          // Spy/espionage games
+    'agent',          // Spy/espionage games, Delta Green, Wrath & Glory
     'operative',      // Delta Green, Cyberpunk
     'survivor',       // Horror/survival games
-    'hunter',         // Monster of the Week
+    'hunter',         // Monster of the Week, World of Darkness
     'chosen',         // Urban fantasy
     'keeper',         // Keeper-style games (player side)
+    'acolyte',        // Dark Heresy (Warhammer 40k)
+    'troubleshooter', // Paranoia
+    'magus',          // Ars Magica
+    'companion',      // Ars Magica (PC type, not the excluded companion)
+    'grog',           // Ars Magica
+    'knight',         // Pendragon
+    'vampire',        // World of Darkness
+    'werewolf',       // World of Darkness
+    'mage',           // Chronicles of Darkness
+    'changeling',     // Chronicles of Darkness
+    'mortal',         // World of Darkness
+    'ghoul',          // World of Darkness
+    'sleepwalker',    // Chronicles of Darkness
+    'proximi',        // Chronicles of Darkness
   ],
   // Common NPC type names
   npcTypes: [
@@ -674,6 +843,9 @@ const GENERIC_CONFIG = {
     'minion',         // Star Wars FFG
     'rival',          // Genesys, Star Wars
     'contact',        // Cyberpunk
+    'spc',            // World of Darkness (Supporting Characters)
+    'npc-somebody',   // Paranoia
+    'npc-accomplice', // Paranoia
   ],
   // Common monster/enemy type names
   monsterTypes: [
@@ -682,14 +854,22 @@ const GENERIC_CONFIG = {
     'enemy',          // Generic
     'adversary',      // PF2e, Daggerheart
     'beast',          // Fantasy
-    'threat',         // PbtA games
+    'threat',         // PbtA games, Wrath & Glory
     'danger',         // City of Mist
     'villain',        // Superhero games
     'foe',            // Ironsworn
-    'horror',         // Horror games
+    'horror',         // Horror games, Chronicles of Darkness
     'abomination',    // Horror/fantasy
     'demon',          // Fantasy
     'undead',         // Fantasy
+    'critter',        // Shadowrun
+    'unnatural',      // Delta Green
+    'ephemeral',      // Chronicles of Darkness
+    'spirit',         // Shadowrun, various
+    'daemon',         // Warhammer 40k
+    'mahō',           // Legend of the Five Rings (tainted creatures)
+    'npc-nobody',     // Paranoia (expendable NPCs)
+    'community',      // Cypher System (large threats)
   ],
   // Types to exclude from sync (non-character entities)
   excludedTypes: [
@@ -714,12 +894,24 @@ const GENERIC_CONFIG = {
     'stronghold',
     'settlement',
     'thing',          // FATE extras
-    'extra',          // Generic non-character
     'deployable',     // Lancer
     'drone',
-    'companion',      // Usually handled separately
     'familiar',
     'mount',
+    'covenant',       // Ars Magica
+    'laboratory',     // Ars Magica
+    'manor',          // Pendragon
+    'holding',        // Various
+    'coterie',        // World of Darkness
+    'cell',           // Hunter (WoD)
+    'group',          // World of Darkness
+    'host',           // Shadowrun
+    'ic',             // Shadowrun (Intrusion Countermeasures)
+    'sprite',         // Shadowrun
+    'device',         // Shadowrun
+    'voidship',       // Warhammer 40k
+    'army',           // Legend of the Five Rings
+    'marker',         // Cypher System
   ],
   classifyNpcVsMonster: null
 }
