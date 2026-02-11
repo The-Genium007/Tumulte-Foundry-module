@@ -56,11 +56,17 @@ class GenericAdapter {
     // Parse flavor text for enriched data
     const parsedFlavor = this.parseFlavorText(message.flavor)
 
+    // Criticality enrichment V2
+    const criticality = this.analyzeCriticality(roll, message)
+
     Logger.info('Roll analysis complete (with universal extraction)', {
       diceResults: universalData.diceResults,
       termsCount: universalData.terms.length,
-      isCritical: universalData.isCritical,
-      criticalType: universalData.criticalType,
+      isCritical: criticality.isCritical,
+      criticalType: criticality.criticalType,
+      severity: criticality.severity,
+      criticalLabel: criticality.label,
+      criticalCategory: criticality.systemCriticalCategory,
       rollType,
       formula: roll.formula,
       total: roll.total,
@@ -80,8 +86,12 @@ class GenericAdapter {
       result: roll.total,
       // Use universal extraction results (more complete)
       diceResults: universalData.diceResults.length > 0 ? universalData.diceResults : legacyDiceResults,
-      isCritical: universalData.isCritical,
-      criticalType: universalData.criticalType,
+      isCritical: criticality.isCritical,
+      criticalType: criticality.criticalType,
+      // Criticality enrichment V2
+      severity: criticality.severity,
+      criticalLabel: criticality.label,
+      criticalCategory: criticality.systemCriticalCategory,
       isHidden: message.whisper?.length > 0,
       rollType: parsedFlavor.rollType || rollType, // Prefer parsed roll type
       // NEW: Universal term data for advanced rendering
@@ -129,6 +139,38 @@ class GenericAdapter {
     }
 
     return this.flavorParser.parse(flavorText)
+  }
+
+  /**
+   * Analyze criticality with enriched V2 data.
+   * Returns severity, label, category in addition to isCritical/criticalType.
+   * Subclasses override this for system-specific enrichment.
+   */
+  analyzeCriticality(roll, _message) {
+    const isCritical = this.detectCritical(roll)
+    const criticalType = this.detectCriticalType(roll)
+
+    if (!isCritical) {
+      return {
+        isCritical: false,
+        criticalType: null,
+        severity: null,
+        label: null,
+        labelLocalized: null,
+        systemCriticalCategory: null,
+        description: null,
+      }
+    }
+
+    return {
+      isCritical: true,
+      criticalType,
+      severity: 'major',
+      label: criticalType === 'success' ? 'Critical Success' : 'Critical Failure',
+      labelLocalized: null,
+      systemCriticalCategory: criticalType === 'success' ? 'generic_success' : 'generic_failure',
+      description: null,
+    }
   }
 
   /**
@@ -237,6 +279,26 @@ class Dnd5eAdapter extends GenericAdapter {
     return null
   }
 
+  analyzeCriticality(roll, message) {
+    const isCritical = this.detectCritical(roll)
+    if (!isCritical) return super.analyzeCriticality(roll, message)
+
+    const d20Result = this.getD20Result(roll)
+    const criticalType = d20Result === 1 ? 'failure' : 'success'
+
+    return {
+      isCritical: true,
+      criticalType,
+      severity: 'major',
+      label: d20Result === 20 ? 'Natural 20' : d20Result === 1 ? 'Natural 1' : `Natural ${d20Result}`,
+      labelLocalized: null,
+      systemCriticalCategory: d20Result === 1 ? 'nat1' : 'nat20',
+      description: criticalType === 'success'
+        ? 'Automatic hit, roll damage dice twice'
+        : 'Automatic miss',
+    }
+  }
+
   detectRollType(roll, message) {
     const flavor = (message.flavor || '').toLowerCase()
 
@@ -330,6 +392,36 @@ class Pf2eAdapter extends GenericAdapter {
     return super.detectCriticalType(roll)
   }
 
+  analyzeCriticality(roll, message) {
+    if (roll.degreeOfSuccess === undefined) return super.analyzeCriticality(roll, message)
+
+    if (roll.degreeOfSuccess === 3) {
+      return {
+        isCritical: true,
+        criticalType: 'success',
+        severity: 'major',
+        label: 'Critical Success',
+        labelLocalized: null,
+        systemCriticalCategory: 'degree_3',
+        description: 'Beat DC by 10 or more, or natural 20 improved outcome',
+      }
+    }
+
+    if (roll.degreeOfSuccess === 0) {
+      return {
+        isCritical: true,
+        criticalType: 'failure',
+        severity: 'major',
+        label: 'Critical Failure',
+        labelLocalized: null,
+        systemCriticalCategory: 'degree_0',
+        description: 'Missed DC by 10 or more, or natural 1 worsened outcome',
+      }
+    }
+
+    return super.analyzeCriticality(roll, message)
+  }
+
   extractStats(actor) {
     if (!actor?.system) return super.extractStats(actor)
 
@@ -381,6 +473,37 @@ class CoC7Adapter extends GenericAdapter {
       }
     }
     return null
+  }
+
+  analyzeCriticality(roll, message) {
+    const d100Result = this.getD100Result(roll)
+    if (d100Result === null) return super.analyzeCriticality(roll, message)
+
+    if (d100Result === 1) {
+      return {
+        isCritical: true,
+        criticalType: 'success',
+        severity: 'extreme',
+        label: 'Critical',
+        labelLocalized: null,
+        systemCriticalCategory: 'coc_critical',
+        description: 'Rolled 01 — the best possible result',
+      }
+    }
+
+    if (d100Result === 100) {
+      return {
+        isCritical: true,
+        criticalType: 'failure',
+        severity: 'extreme',
+        label: 'Fumble',
+        labelLocalized: null,
+        systemCriticalCategory: 'coc_fumble',
+        description: 'Rolled 100 — catastrophic failure',
+      }
+    }
+
+    return super.analyzeCriticality(roll, message)
   }
 
   detectRollType(roll, message) {
@@ -456,6 +579,29 @@ class Wfrp4eAdapter extends GenericAdapter {
       }
     }
     return null
+  }
+
+  analyzeCriticality(roll, message) {
+    const d100Result = this.getD100Result(roll)
+    if (!d100Result) return super.analyzeCriticality(roll, message)
+
+    const tens = Math.floor(d100Result / 10)
+    const units = d100Result % 10
+    if (tens !== units) return super.analyzeCriticality(roll, message)
+
+    // Doubles — determine success/failure from context (total vs target)
+    // Default to success for doubles (WFRP doubles on success = critical hit)
+    const criticalType = roll.options?.outcome === 'failure' ? 'failure' : 'success'
+
+    return {
+      isCritical: true,
+      criticalType,
+      severity: 'major',
+      label: `Doubles! (${d100Result})`,
+      labelLocalized: null,
+      systemCriticalCategory: criticalType === 'success' ? 'doubles_success' : 'doubles_failure',
+      description: `Rolled doubles ${d100Result} on d100`,
+    }
   }
 
   detectRollType(roll, message) {
@@ -544,6 +690,48 @@ class SwadeAdapter extends GenericAdapter {
     return null
   }
 
+  analyzeCriticality(roll, message) {
+    let aceCount = 0
+    let hasOne = false
+
+    for (const term of roll.terms || []) {
+      if (term.results) {
+        for (const result of term.results) {
+          if (result.exploded) aceCount++
+          if (result.result === 1) hasOne = true
+        }
+      }
+    }
+
+    if (aceCount > 0) {
+      // Dynamic severity based on explosion count
+      const severity = aceCount >= 3 ? 'extreme' : aceCount >= 2 ? 'major' : 'minor'
+      return {
+        isCritical: true,
+        criticalType: 'success',
+        severity,
+        label: aceCount > 1 ? `Ace x${aceCount}!` : 'Ace!',
+        labelLocalized: null,
+        systemCriticalCategory: 'ace',
+        description: `Die exploded ${aceCount} time(s)`,
+      }
+    }
+
+    if (hasOne) {
+      return {
+        isCritical: true,
+        criticalType: 'failure',
+        severity: 'major',
+        label: 'Critical Failure',
+        labelLocalized: null,
+        systemCriticalCategory: 'swade_fumble',
+        description: 'Rolled 1 on trait die',
+      }
+    }
+
+    return super.analyzeCriticality(roll, message)
+  }
+
   detectRollType(roll, message) {
     const flavor = (message.flavor || '').toLowerCase()
 
@@ -618,6 +806,38 @@ class CyberpunkRedAdapter extends GenericAdapter {
       }
     }
     return null
+  }
+
+  analyzeCriticality(roll, message) {
+    for (const term of roll.terms || []) {
+      if (term.faces === 10 && term.results) {
+        for (const result of term.results) {
+          if (result.result === 10) {
+            return {
+              isCritical: true,
+              criticalType: 'success',
+              severity: 'major',
+              label: 'Critical Success',
+              labelLocalized: null,
+              systemCriticalCategory: 'cpred_crit',
+              description: 'Natural 10 — roll again and add',
+            }
+          }
+          if (result.result === 1) {
+            return {
+              isCritical: true,
+              criticalType: 'failure',
+              severity: 'major',
+              label: 'Critical Failure',
+              labelLocalized: null,
+              systemCriticalCategory: 'cpred_fumble',
+              description: 'Natural 1 — roll again and subtract',
+            }
+          }
+        }
+      }
+    }
+    return super.analyzeCriticality(roll, message)
   }
 
   detectRollType(roll, message) {
@@ -700,6 +920,60 @@ class AlienRpgAdapter extends GenericAdapter {
     return null
   }
 
+  analyzeCriticality(roll, message) {
+    let hasSix = false
+    let hasStressOne = false
+    let sixCount = 0
+
+    for (const term of roll.terms || []) {
+      if (term.faces === 6 && term.results) {
+        for (const result of term.results) {
+          if (result.result === 6) { hasSix = true; sixCount++ }
+          // Stress dice 1s trigger panic (Alien RPG marks stress dice via options or class)
+          if (result.result === 1) hasStressOne = true
+        }
+      }
+    }
+
+    if (hasSix && hasStressOne) {
+      return {
+        isCritical: true,
+        criticalType: 'success',
+        severity: 'major',
+        label: 'Success under Stress',
+        labelLocalized: null,
+        systemCriticalCategory: 'stress_success',
+        description: `${sixCount} success(es) but stress die triggered panic`,
+      }
+    }
+
+    if (hasStressOne && !hasSix) {
+      return {
+        isCritical: true,
+        criticalType: 'failure',
+        severity: 'major',
+        label: 'Facehugger',
+        labelLocalized: null,
+        systemCriticalCategory: 'facehugger',
+        description: 'Stress die rolled 1 — panic check required',
+      }
+    }
+
+    if (hasSix) {
+      return {
+        isCritical: true,
+        criticalType: 'success',
+        severity: sixCount >= 2 ? 'major' : 'minor',
+        label: sixCount >= 2 ? 'Multiple Successes' : 'Success',
+        labelLocalized: null,
+        systemCriticalCategory: 'alien_success',
+        description: `${sixCount} success(es) on dice pool`,
+      }
+    }
+
+    return super.analyzeCriticality(roll, message)
+  }
+
   detectRollType(roll, message) {
     const flavor = (message.flavor || '').toLowerCase()
 
@@ -773,6 +1047,46 @@ class ForbiddenLandsAdapter extends GenericAdapter {
     return null
   }
 
+  analyzeCriticality(roll, message) {
+    let sixCount = 0
+    let oneCount = 0
+
+    for (const term of roll.terms || []) {
+      if (term.faces === 6 && term.results) {
+        for (const result of term.results) {
+          if (result.result === 6) sixCount++
+          if (result.result === 1) oneCount++
+        }
+      }
+    }
+
+    if (sixCount > 0) {
+      return {
+        isCritical: true,
+        criticalType: 'success',
+        severity: sixCount >= 2 ? 'major' : 'minor',
+        label: 'Triumph',
+        labelLocalized: null,
+        systemCriticalCategory: 'yz_triumph',
+        description: `${sixCount} success(es) on Year Zero dice`,
+      }
+    }
+
+    if (oneCount > 0) {
+      return {
+        isCritical: true,
+        criticalType: 'failure',
+        severity: oneCount >= 2 ? 'major' : 'minor',
+        label: 'Bane',
+        labelLocalized: null,
+        systemCriticalCategory: 'yz_bane',
+        description: `${oneCount} bane(s) — attribute/gear damage`,
+      }
+    }
+
+    return super.analyzeCriticality(roll, message)
+  }
+
   extractStats(actor) {
     if (!actor?.system) return super.extractStats(actor)
 
@@ -819,6 +1133,46 @@ class VaesenAdapter extends GenericAdapter {
       }
     }
     return false
+  }
+
+  analyzeCriticality(roll, message) {
+    let sixCount = 0
+    let oneCount = 0
+
+    for (const term of roll.terms || []) {
+      if (term.faces === 6 && term.results) {
+        for (const result of term.results) {
+          if (result.result === 6) sixCount++
+          if (result.result === 1) oneCount++
+        }
+      }
+    }
+
+    if (sixCount > 0) {
+      return {
+        isCritical: true,
+        criticalType: 'success',
+        severity: sixCount >= 2 ? 'major' : 'minor',
+        label: 'Triumph',
+        labelLocalized: null,
+        systemCriticalCategory: 'yz_triumph',
+        description: `${sixCount} success(es) on Year Zero dice`,
+      }
+    }
+
+    if (oneCount > 0) {
+      return {
+        isCritical: true,
+        criticalType: 'failure',
+        severity: oneCount >= 2 ? 'major' : 'minor',
+        label: 'Bane',
+        labelLocalized: null,
+        systemCriticalCategory: 'yz_bane',
+        description: `${oneCount} bane(s)`,
+      }
+    }
+
+    return super.analyzeCriticality(roll, message)
   }
 
   extractStats(actor) {
@@ -891,6 +1245,46 @@ class BladesInTheDarkAdapter extends GenericAdapter {
     return null
   }
 
+  analyzeCriticality(roll, message) {
+    let sixCount = 0
+    let highestResult = 0
+
+    for (const term of roll.terms || []) {
+      if (term.faces === 6 && term.results) {
+        for (const result of term.results) {
+          if (result.result === 6) sixCount++
+          if (result.result > highestResult) highestResult = result.result
+        }
+      }
+    }
+
+    if (sixCount >= 2) {
+      return {
+        isCritical: true,
+        criticalType: 'success',
+        severity: 'major',
+        label: 'Critical',
+        labelLocalized: null,
+        systemCriticalCategory: 'bitd_critical',
+        description: `${sixCount} sixes — enhanced effect`,
+      }
+    }
+
+    if (highestResult <= 3) {
+      return {
+        isCritical: true,
+        criticalType: 'failure',
+        severity: 'major',
+        label: 'Desperate Failure',
+        labelLocalized: null,
+        systemCriticalCategory: 'bitd_desperate',
+        description: `Highest die: ${highestResult} — bad outcome with consequences`,
+      }
+    }
+
+    return super.analyzeCriticality(roll, message)
+  }
+
   extractStats(actor) {
     if (!actor?.system) return super.extractStats(actor)
 
@@ -901,6 +1295,470 @@ class BladesInTheDarkAdapter extends GenericAdapter {
       playbook: system.playbook || '',
       stress: system.stress?.value || 0,
       trauma: system.trauma?.value || 0
+    }
+  }
+}
+
+// ============================================================================
+// NEW ADAPTERS — Criticality V2
+// ============================================================================
+
+/**
+ * Vampire: The Masquerade 5e / World of Darkness 5e System Adapter
+ */
+class Vtm5eAdapter extends GenericAdapter {
+  get systemId() {
+    return 'vtm5e'
+  }
+
+  detectCritical(roll) {
+    let tens = 0
+    let ones = 0
+    let totalDice = 0
+
+    for (const term of roll.terms || []) {
+      if (term.faces === 10 && term.results) {
+        for (const result of term.results) {
+          totalDice++
+          if (result.result === 10) tens++
+          if (result.result === 1) ones++
+        }
+      }
+    }
+
+    // Critical: 2+ tens (messy or clean) or all ones (bestial failure)
+    return tens >= 2 || (ones > 0 && this.getSuccessCount(roll) === 0)
+  }
+
+  detectCriticalType(roll) {
+    let tens = 0
+    let ones = 0
+
+    for (const term of roll.terms || []) {
+      if (term.faces === 10 && term.results) {
+        for (const result of term.results) {
+          if (result.result === 10) tens++
+          if (result.result === 1) ones++
+        }
+      }
+    }
+
+    if (tens >= 2) return 'success'
+    if (ones > 0 && this.getSuccessCount(roll) === 0) return 'failure'
+    return null
+  }
+
+  getSuccessCount(roll) {
+    let successes = 0
+    for (const term of roll.terms || []) {
+      if (term.faces === 10 && term.results) {
+        for (const result of term.results) {
+          if (result.result >= 6) successes++
+        }
+      }
+    }
+    return successes
+  }
+
+  analyzeCriticality(roll, message) {
+    let tens = 0
+    let ones = 0
+    let hungerTens = 0
+    let hungerOnes = 0
+
+    // V5 separates hunger dice from regular dice
+    // Hunger dice are typically in a separate term or marked via options
+    for (let i = 0; i < (roll.terms || []).length; i++) {
+      const term = roll.terms[i]
+      if (term.faces === 10 && term.results) {
+        const isHungerDie = term.options?.flavor === 'hunger' || i > 0
+        for (const result of term.results) {
+          if (result.result === 10) {
+            tens++
+            if (isHungerDie) hungerTens++
+          }
+          if (result.result === 1) {
+            ones++
+            if (isHungerDie) hungerOnes++
+          }
+        }
+      }
+    }
+
+    const successes = this.getSuccessCount(roll)
+
+    // Messy Critical: 2+ tens with at least one on a hunger die
+    if (tens >= 2 && hungerTens >= 1) {
+      return {
+        isCritical: true,
+        criticalType: 'success',
+        severity: 'extreme',
+        label: 'Messy Critical',
+        labelLocalized: null,
+        systemCriticalCategory: 'messy_critical',
+        description: 'Critical success but the Beast takes control — brutal, risky outcome',
+      }
+    }
+
+    // Clean Critical: 2+ tens, none on hunger dice
+    if (tens >= 2) {
+      return {
+        isCritical: true,
+        criticalType: 'success',
+        severity: 'major',
+        label: 'Critical Success',
+        labelLocalized: null,
+        systemCriticalCategory: 'vtm_critical',
+        description: `${tens} tens — 4+ successes`,
+      }
+    }
+
+    // Bestial Failure: 0 successes with 1s on hunger dice
+    if (successes === 0 && hungerOnes >= 1) {
+      return {
+        isCritical: true,
+        criticalType: 'failure',
+        severity: 'extreme',
+        label: 'Bestial Failure',
+        labelLocalized: null,
+        systemCriticalCategory: 'bestial_failure',
+        description: 'The Beast lashes out — compulsion triggered',
+      }
+    }
+
+    // Total Failure: 0 successes with 1s (no hunger)
+    if (successes === 0 && ones > 0) {
+      return {
+        isCritical: true,
+        criticalType: 'failure',
+        severity: 'major',
+        label: 'Total Failure',
+        labelLocalized: null,
+        systemCriticalCategory: 'vtm_failure',
+        description: 'Complete failure with complications',
+      }
+    }
+
+    return super.analyzeCriticality(roll, message)
+  }
+
+  detectRollType(roll, message) {
+    const flavor = (message.flavor || '').toLowerCase()
+
+    if (flavor.includes('frenzy')) return 'frenzy'
+    if (flavor.includes('rouse')) return 'rouse'
+    if (flavor.includes('remorse')) return 'remorse'
+    if (flavor.includes('hunt')) return 'hunt'
+
+    return super.detectRollType(roll, message)
+  }
+
+  extractStats(actor) {
+    if (!actor?.system) return super.extractStats(actor)
+
+    const system = actor.system
+    return {
+      name: actor.name,
+      type: actor.type,
+      clan: system.clan?.value || '',
+      hunger: system.hunger?.value || 0,
+      health: system.health?.value || 0,
+      willpower: system.willpower?.value || 0,
+    }
+  }
+}
+
+/**
+ * Shadowrun 5e/6e System Adapter
+ */
+class ShadowrunAdapter extends GenericAdapter {
+  get systemId() {
+    return 'shadowrun5e'
+  }
+
+  detectCritical(roll) {
+    const { ones, totalDice, hits } = this.countPool(roll)
+    // Glitch: 50%+ ones
+    // Critical Glitch: Glitch + 0 hits
+    return ones >= Math.ceil(totalDice / 2)
+  }
+
+  detectCriticalType(roll) {
+    const { ones, totalDice, hits } = this.countPool(roll)
+    const isGlitch = ones >= Math.ceil(totalDice / 2)
+
+    if (isGlitch && hits === 0) return 'failure' // Critical Glitch
+    if (isGlitch) return 'failure' // Regular Glitch (still a failure-type)
+    return null
+  }
+
+  countPool(roll) {
+    let ones = 0
+    let hits = 0
+    let totalDice = 0
+
+    for (const term of roll.terms || []) {
+      if (term.faces === 6 && term.results) {
+        for (const result of term.results) {
+          totalDice++
+          if (result.result === 1) ones++
+          if (result.result >= 5) hits++ // 5+ = hit in Shadowrun
+        }
+      }
+    }
+
+    return { ones, hits, totalDice }
+  }
+
+  analyzeCriticality(roll, message) {
+    const { ones, totalDice, hits } = this.countPool(roll)
+    const isGlitch = totalDice > 0 && ones >= Math.ceil(totalDice / 2)
+
+    if (!isGlitch) return super.analyzeCriticality(roll, message)
+
+    if (hits === 0) {
+      return {
+        isCritical: true,
+        criticalType: 'failure',
+        severity: 'extreme',
+        label: 'Critical Glitch',
+        labelLocalized: null,
+        systemCriticalCategory: 'critical_glitch',
+        description: `${ones}/${totalDice} ones with 0 hits — catastrophic failure`,
+      }
+    }
+
+    return {
+      isCritical: true,
+      criticalType: 'failure',
+      severity: 'major',
+      label: 'Glitch',
+      labelLocalized: null,
+      systemCriticalCategory: 'glitch',
+      description: `${ones}/${totalDice} ones — something goes wrong, but you still got ${hits} hit(s)`,
+    }
+  }
+
+  detectRollType(roll, message) {
+    const flavor = (message.flavor || '').toLowerCase()
+
+    if (flavor.includes('attack') || flavor.includes('combat')) return 'attack'
+    if (flavor.includes('damage') || flavor.includes('soak')) return 'damage'
+    if (flavor.includes('initiative')) return 'initiative'
+    if (flavor.includes('matrix') || flavor.includes('hack')) return 'matrix'
+    if (flavor.includes('magic') || flavor.includes('spell') || flavor.includes('drain')) return 'magic'
+
+    return super.detectRollType(roll, message)
+  }
+
+  extractStats(actor) {
+    if (!actor?.system) return super.extractStats(actor)
+
+    const system = actor.system
+    return {
+      name: actor.name,
+      type: actor.type,
+      metatype: system.metatype || '',
+      essence: system.essence?.value || 6,
+      edge: system.edge?.value || 0,
+    }
+  }
+}
+
+/**
+ * Star Wars FFG (Genesys) System Adapter
+ * Handles narrative dice with symbols (Success, Failure, Advantage, Threat, Triumph, Despair)
+ */
+class StarWarsFFGAdapter extends GenericAdapter {
+  get systemId() {
+    return 'starwarsffg'
+  }
+
+  detectCritical(roll) {
+    const symbols = this.extractSymbols(roll)
+    return symbols.triumph > 0 || symbols.despair > 0
+  }
+
+  detectCriticalType(roll) {
+    const symbols = this.extractSymbols(roll)
+    if (symbols.triumph > 0) return 'success'
+    if (symbols.despair > 0) return 'failure'
+    return null
+  }
+
+  extractSymbols(roll) {
+    const symbols = { success: 0, failure: 0, advantage: 0, threat: 0, triumph: 0, despair: 0 }
+
+    // Try options first (some modules store symbols here)
+    if (roll.options?.symbols) {
+      return { ...symbols, ...roll.options.symbols }
+    }
+
+    // Parse from results
+    for (const term of roll.terms || []) {
+      if (term.results) {
+        for (const result of term.results) {
+          if (result.symbols) {
+            for (const sym of result.symbols) {
+              if (symbols[sym.type] !== undefined) {
+                symbols[sym.type] += sym.count || 1
+              }
+            }
+          }
+          // Proficiency die (d12) face mapping for triumph
+          if (result.result === 12 && term.faces === 12) symbols.triumph++
+          // Challenge die (d12) face mapping for despair
+          if (result.result === 12 && term.faces === 12 && term.options?.type === 'challenge') {
+            symbols.despair++
+          }
+        }
+      }
+    }
+
+    return symbols
+  }
+
+  analyzeCriticality(roll, message) {
+    const symbols = this.extractSymbols(roll)
+
+    if (symbols.triumph > 0 && symbols.despair > 0) {
+      return {
+        isCritical: true,
+        criticalType: 'success', // Triumph takes narrative precedence
+        severity: 'extreme',
+        label: 'Triumph & Despair',
+        labelLocalized: null,
+        systemCriticalCategory: 'triumph_and_despair',
+        description: `${symbols.triumph} Triumph(s) and ${symbols.despair} Despair(s) — dramatic narrative moment`,
+      }
+    }
+
+    if (symbols.triumph > 0) {
+      return {
+        isCritical: true,
+        criticalType: 'success',
+        severity: symbols.triumph >= 2 ? 'extreme' : 'major',
+        label: symbols.triumph >= 2 ? `Triumph x${symbols.triumph}` : 'Triumph',
+        labelLocalized: null,
+        systemCriticalCategory: 'triumph',
+        description: 'Powerful positive narrative effect',
+      }
+    }
+
+    if (symbols.despair > 0) {
+      return {
+        isCritical: true,
+        criticalType: 'failure',
+        severity: symbols.despair >= 2 ? 'extreme' : 'major',
+        label: symbols.despair >= 2 ? `Despair x${symbols.despair}` : 'Despair',
+        labelLocalized: null,
+        systemCriticalCategory: 'despair',
+        description: 'Powerful negative narrative effect',
+      }
+    }
+
+    return super.analyzeCriticality(roll, message)
+  }
+
+  detectRollType(roll, message) {
+    const flavor = (message.flavor || '').toLowerCase()
+
+    if (flavor.includes('combat') || flavor.includes('attack')) return 'attack'
+    if (flavor.includes('force')) return 'force'
+    if (flavor.includes('fear')) return 'fear'
+
+    return super.detectRollType(roll, message)
+  }
+
+  extractStats(actor) {
+    if (!actor?.system) return super.extractStats(actor)
+
+    const system = actor.system
+    return {
+      name: actor.name,
+      type: actor.type,
+      species: system.species?.value || '',
+      career: system.career?.value || '',
+      wounds: {
+        current: system.stats?.wounds?.value || 0,
+        max: system.stats?.wounds?.max || 0,
+      },
+      strain: {
+        current: system.stats?.strain?.value || 0,
+        max: system.stats?.strain?.max || 0,
+      },
+    }
+  }
+}
+
+/**
+ * FATE Core System Adapter
+ * Uses 4 Fudge dice (4dF): each die has -1, 0, +1 faces. Range: -4 to +4.
+ */
+class FateAdapter extends GenericAdapter {
+  get systemId() {
+    return 'fate-core-official'
+  }
+
+  detectCritical(roll) {
+    // FATE: ±4 are extreme results (~1.2% chance each)
+    return roll.total === 4 || roll.total === -4
+  }
+
+  detectCriticalType(roll) {
+    if (roll.total === 4) return 'success'
+    if (roll.total === -4) return 'failure'
+    return null
+  }
+
+  analyzeCriticality(roll, message) {
+    if (roll.total === 4) {
+      return {
+        isCritical: true,
+        criticalType: 'success',
+        severity: 'major',
+        label: '+4',
+        labelLocalized: null,
+        systemCriticalCategory: 'fate_extreme',
+        description: 'All four Fudge dice show + — legendary result',
+      }
+    }
+
+    if (roll.total === -4) {
+      return {
+        isCritical: true,
+        criticalType: 'failure',
+        severity: 'major',
+        label: '-4',
+        labelLocalized: null,
+        systemCriticalCategory: 'fate_extreme',
+        description: 'All four Fudge dice show - — catastrophic result',
+      }
+    }
+
+    return super.analyzeCriticality(roll, message)
+  }
+
+  detectRollType(roll, message) {
+    const flavor = (message.flavor || '').toLowerCase()
+
+    if (flavor.includes('attack')) return 'attack'
+    if (flavor.includes('defend')) return 'defend'
+    if (flavor.includes('overcome')) return 'overcome'
+    if (flavor.includes('create advantage') || flavor.includes('advantage')) return 'create-advantage'
+
+    return super.detectRollType(roll, message)
+  }
+
+  extractStats(actor) {
+    if (!actor?.system) return super.extractStats(actor)
+
+    const system = actor.system
+    return {
+      name: actor.name,
+      type: actor.type,
+      refresh: system.fatePoints?.refresh || 0,
+      current: system.fatePoints?.current || 0,
     }
   }
 }
@@ -921,7 +1779,15 @@ export function getSystemAdapter() {
     'alienrpg': AlienRpgAdapter,
     'forbidden-lands': ForbiddenLandsAdapter,
     'vaesen': VaesenAdapter,
-    'blades-in-the-dark': BladesInTheDarkAdapter
+    'blades-in-the-dark': BladesInTheDarkAdapter,
+    // NEW — Criticality V2
+    'vtm5e': Vtm5eAdapter,
+    'wod5e': Vtm5eAdapter,
+    'shadowrun5e': ShadowrunAdapter,
+    'shadowrun6-eden': ShadowrunAdapter,
+    'starwarsffg': StarWarsFFGAdapter,
+    'genesys': StarWarsFFGAdapter,
+    'fate-core-official': FateAdapter,
   }
 
   const AdapterClass = adapters[systemId] || GenericAdapter
@@ -942,5 +1808,9 @@ export {
   AlienRpgAdapter,
   ForbiddenLandsAdapter,
   VaesenAdapter,
-  BladesInTheDarkAdapter
+  BladesInTheDarkAdapter,
+  Vtm5eAdapter,
+  ShadowrunAdapter,
+  StarWarsFFGAdapter,
+  FateAdapter,
 }

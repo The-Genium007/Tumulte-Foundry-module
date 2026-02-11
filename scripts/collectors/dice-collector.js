@@ -141,6 +141,10 @@ export class DiceCollector {
         rollType: rollData.rollType,
         isCritical: rollData.isCritical,
         criticalType: rollData.criticalType,
+        // Criticality enrichment V2
+        severity: rollData.severity,
+        criticalLabel: rollData.criticalLabel,
+        criticalCategory: rollData.criticalCategory,
         // Enriched flavor data
         skill: rollData.skill,
         skillRaw: rollData.skillRaw,
@@ -168,6 +172,10 @@ export class DiceCollector {
           formula: rollData.rollFormula,
           result: rollData.result,
           isCritical: rollData.isCritical,
+          criticalType: rollData.criticalType,
+          severity: rollData.severity,
+          criticalLabel: rollData.criticalLabel,
+          criticalCategory: rollData.criticalCategory,
           rollType: rollData.rollType
         })
       } else {
