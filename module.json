@@ -2,7 +2,7 @@
   "id": "tumulte-integration",
   "title": "Tumulte Integration",
   "description": "Real-time integration with Tumulte for Twitch TTRPG overlays. Automatically syncs dice rolls, characters, and combat.",
-  "version": "2.0.7",
+  "version": "2.1.1",
   "authors": [
     {
       "name": "Tumulte Team",

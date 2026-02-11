@@ -153,6 +153,23 @@ export class TumulteSocketClient extends EventTarget {
           this.dispatchEvent(new CustomEvent('combat-end-ack', { detail: data }))
         })
 
+        // Command events from Tumulte (gamification)
+        this.socket.on('command:roll_dice', (data) => {
+          this.handleCommandRollDice(data)
+        })
+
+        this.socket.on('command:chat_message', (data) => {
+          this.handleCommandChatMessage(data)
+        })
+
+        this.socket.on('command:delete_message', (data) => {
+          this.handleCommandDeleteMessage(data)
+        })
+
+        this.socket.on('command:modify_actor', (data) => {
+          this.handleCommandModifyActor(data)
+        })
+
       } catch (error) {
         this.connecting = false
         reject(error)
@@ -497,6 +514,160 @@ export class TumulteSocketClient extends EventTarget {
       reconnectAttempts: this.reconnectAttempts,
       lastPong: this.lastPong,
       socketId: this.socket?.id
+    }
+  }
+
+  // ========================================
+  // COMMAND HANDLERS (Gamification)
+  // ========================================
+
+  /**
+   * Handle roll_dice command from Tumulte
+   * Rolls a die with an optionally forced result
+   */
+  async handleCommandRollDice(data) {
+    const { formula, forcedResult, flavor, speaker, requestId } = data
+
+    Logger.info('Received roll_dice command', { formula, forcedResult, flavor, requestId })
+
+    try {
+      // Create a new Roll
+      const roll = new Roll(formula)
+      await roll.evaluate()
+
+      // If forcedResult is specified, modify the roll result
+      if (forcedResult !== undefined && roll.dice.length > 0) {
+        const mainDie = roll.dice[0]
+        if (mainDie.results && mainDie.results.length > 0) {
+          mainDie.results[0].result = forcedResult
+          // Recalculate total
+          roll._total = roll._evaluateTotal()
+        }
+      }
+
+      // Build speaker data
+      let speakerData = {}
+      if (speaker?.actorId) {
+        const actor = game.actors.get(speaker.actorId)
+        if (actor) {
+          speakerData = ChatMessage.getSpeaker({ actor })
+        }
+      }
+
+      // Send to chat
+      await roll.toMessage({
+        speaker: speakerData,
+        flavor: flavor || ''
+      })
+
+      Logger.info('Roll dice command executed successfully', { requestId, total: roll.total })
+      this.dispatchEvent(new CustomEvent('command-executed', {
+        detail: { command: 'roll_dice', requestId, success: true, total: roll.total }
+      }))
+
+    } catch (error) {
+      Logger.error('Failed to execute roll_dice command', error)
+      this.dispatchEvent(new CustomEvent('command-executed', {
+        detail: { command: 'roll_dice', requestId, success: false, error: error.message }
+      }))
+    }
+  }
+
+  /**
+   * Handle chat_message command from Tumulte
+   * Sends a message to the Foundry chat
+   */
+  async handleCommandChatMessage(data) {
+    const { content, speaker, requestId } = data
+
+    Logger.info('Received chat_message command', { contentLength: content?.length, requestId })
+
+    try {
+      const messageData = {
+        content: content || ''
+      }
+
+      if (speaker?.alias) {
+        messageData.speaker = { alias: speaker.alias }
+      } else if (speaker?.actorId) {
+        const actor = game.actors.get(speaker.actorId)
+        if (actor) {
+          messageData.speaker = ChatMessage.getSpeaker({ actor })
+        }
+      }
+
+      await ChatMessage.create(messageData)
+
+      Logger.info('Chat message command executed successfully', { requestId })
+      this.dispatchEvent(new CustomEvent('command-executed', {
+        detail: { command: 'chat_message', requestId, success: true }
+      }))
+
+    } catch (error) {
+      Logger.error('Failed to execute chat_message command', error)
+      this.dispatchEvent(new CustomEvent('command-executed', {
+        detail: { command: 'chat_message', requestId, success: false, error: error.message }
+      }))
+    }
+  }
+
+  /**
+   * Handle delete_message command from Tumulte
+   * Deletes a message from the Foundry chat
+   */
+  async handleCommandDeleteMessage(data) {
+    const { messageId, requestId } = data
+
+    Logger.info('Received delete_message command', { messageId, requestId })
+
+    try {
+      const message = game.messages.get(messageId)
+      if (!message) {
+        throw new Error(`Message not found: ${messageId}`)
+      }
+
+      await message.delete()
+
+      Logger.info('Delete message command executed successfully', { requestId, messageId })
+      this.dispatchEvent(new CustomEvent('command-executed', {
+        detail: { command: 'delete_message', requestId, success: true }
+      }))
+
+    } catch (error) {
+      Logger.error('Failed to execute delete_message command', error)
+      this.dispatchEvent(new CustomEvent('command-executed', {
+        detail: { command: 'delete_message', requestId, success: false, error: error.message }
+      }))
+    }
+  }
+
+  /**
+   * Handle modify_actor command from Tumulte
+   * Modifies an actor's data
+   */
+  async handleCommandModifyActor(data) {
+    const { actorId, updates, requestId } = data
+
+    Logger.info('Received modify_actor command', { actorId, updateKeys: Object.keys(updates || {}), requestId })
+
+    try {
+      const actor = game.actors.get(actorId)
+      if (!actor) {
+        throw new Error(`Actor not found: ${actorId}`)
+      }
+
+      await actor.update(updates)
+
+      Logger.info('Modify actor command executed successfully', { requestId, actorId })
+      this.dispatchEvent(new CustomEvent('command-executed', {
+        detail: { command: 'modify_actor', requestId, success: true }
+      }))
+
+    } catch (error) {
+      Logger.error('Failed to execute modify_actor command', error)
+      this.dispatchEvent(new CustomEvent('command-executed', {
+        detail: { command: 'modify_actor', requestId, success: false, error: error.message }
+      }))
     }
   }
 }
