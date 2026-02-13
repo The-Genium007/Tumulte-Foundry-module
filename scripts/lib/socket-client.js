@@ -170,6 +170,25 @@ export class TumulteSocketClient extends EventTarget {
           this.handleCommandModifyActor(data)
         })
 
+        // Spell effect commands (gamification)
+        this.socket.on('command:apply_spell_effect', (data) => {
+          this.handleCommandApplySpellEffect(data)
+        })
+
+        this.socket.on('command:remove_spell_effect', (data) => {
+          this.handleCommandRemoveSpellEffect(data)
+        })
+
+        // Cleanup all Tumulte effects (maintenance tool)
+        this.socket.on('command:cleanup_all_effects', (data) => {
+          this.handleCommandCleanupAllEffects(data)
+        })
+
+        // On-demand sync request
+        this.socket.on('command:request_sync', (data) => {
+          this.dispatchEvent(new CustomEvent('command:request_sync', { detail: data }))
+        })
+
       } catch (error) {
         this.connecting = false
         reject(error)
@@ -253,7 +272,10 @@ export class TumulteSocketClient extends EventTarget {
   handlePing(data) {
     this.lastPong = Date.now()
     if (this.socket) {
-      this.socket.emit('pong', { timestamp: data.timestamp })
+      this.socket.emit('pong', {
+        timestamp: data.timestamp,
+        moduleVersion: game.modules.get('tumulte-integration')?.version || null,
+      })
     }
   }
 
@@ -669,6 +691,510 @@ export class TumulteSocketClient extends EventTarget {
         detail: { command: 'modify_actor', requestId, success: false, error: error.message }
       }))
     }
+  }
+
+  // ========================================
+  // SPELL EFFECT COMMANDS (Gamification)
+  // ========================================
+
+  /**
+   * Handle apply_spell_effect command from Tumulte
+   * Applies a spell effect (disable, buff, or debuff) on an actor's spell item
+   */
+  async handleCommandApplySpellEffect(data) {
+    const { actorId, spellId, spellName, effect, requestId } = data
+
+    Logger.info('Received apply_spell_effect command', {
+      actorId, spellId, spellName, effectType: effect?.type, requestId
+    })
+
+    try {
+      const actor = game.actors.get(actorId)
+      if (!actor) {
+        throw new Error(`Actor not found: ${actorId}`)
+      }
+
+      const spell = actor.items.get(spellId)
+      if (!spell) {
+        throw new Error(`Spell not found: ${spellId} on actor ${actorId}`)
+      }
+
+      const effectType = effect?.type
+      if (!effectType) {
+        throw new Error('Missing effect type')
+      }
+
+      switch (effectType) {
+        case 'disable':
+          await this._applySpellDisable(actor, spell, effect, requestId)
+          break
+        case 'buff':
+          await this._applySpellBuff(actor, spell, effect, requestId)
+          break
+        case 'debuff':
+          await this._applySpellDebuff(actor, spell, effect, requestId)
+          break
+        default:
+          throw new Error(`Unknown spell effect type: ${effectType}`)
+      }
+
+      Logger.info('Spell effect applied successfully', { requestId, spellName, effectType })
+      this.dispatchEvent(new CustomEvent('command-executed', {
+        detail: { command: 'apply_spell_effect', requestId, success: true }
+      }))
+
+    } catch (error) {
+      Logger.error('Failed to execute apply_spell_effect command', error)
+      this.dispatchEvent(new CustomEvent('command-executed', {
+        detail: { command: 'apply_spell_effect', requestId, success: false, error: error.message }
+      }))
+    }
+  }
+
+  /**
+   * Apply spell disable effect
+   * Marks spell as unprepared (D&D 5e) and sets a recovery timer via flag
+   */
+  async _applySpellDisable(actor, spell, effect, requestId) {
+    const durationSeconds = effect.durationSeconds || 600 // default 10 min
+    const durationMs = durationSeconds * 1000
+    const disabledAt = Date.now()
+    const expiresAt = disabledAt + durationMs
+    const triggeredBy = effect.triggeredBy || 'le chat'
+
+    // Store original prepared state for recovery
+    const originalPrepared = spell.system?.preparation?.prepared ?? true
+
+    // Set disabled flag with all recovery info
+    await spell.setFlag(MODULE_ID, 'disabled', {
+      requestId,
+      disabledAt,
+      durationMs,
+      expiresAt,
+      originalPrepared,
+      triggeredBy,
+    })
+
+    // System-specific: mark spell as unprepared
+    const systemId = game.system.id
+    if (systemId === 'dnd5e') {
+      await spell.update({ 'system.preparation.prepared': false })
+    }
+
+    // Re-render the actor sheet so the visual highlighting hook fires
+    actor.sheet?.render(false)
+
+    // Schedule re-enable timer
+    const timeoutId = setTimeout(() => {
+      this._reEnableSpell(actor.id, spell.id)
+    }, durationMs)
+
+    // Store timeout reference for cleanup
+    if (!this._spellDisableTimers) this._spellDisableTimers = new Map()
+    this._spellDisableTimers.set(`${actor.id}.${spell.id}`, timeoutId)
+
+    // Send chat message
+    const durationMin = Math.round(durationSeconds / 60)
+    await ChatMessage.create({
+      content: `
+        <div class="tumulte-spell-effect tumulte-spell-disable">
+          <div class="tumulte-spell-effect-header">
+            <img src="${spell.img}" width="32" height="32"/>
+            <div>
+              <strong>${spell.name}</strong> a été <em>bloqué</em> pendant ${durationMin} min !
+              <br/><small>Déclenché par <strong>${triggeredBy}</strong></small>
+            </div>
+          </div>
+        </div>
+      `,
+      speaker: { alias: 'Tumulte' },
+    })
+
+    Logger.info('Spell disabled', {
+      spellName: spell.name,
+      durationSeconds,
+      expiresAt: new Date(expiresAt).toISOString(),
+    })
+  }
+
+  /**
+   * Apply spell buff effect
+   * Flags the spell so the SpellEffectCollector applies advantage/bonus on next cast
+   */
+  async _applySpellBuff(actor, spell, effect, requestId) {
+    const triggeredBy = effect.triggeredBy || 'le chat'
+    const buffType = effect.buffType || 'advantage'
+    const bonusValue = effect.bonusValue || 2
+    const highlightColor = effect.highlightColor || '#10B981'
+
+    // Set the buff flag — will be consumed by SpellEffectCollector on next cast
+    await spell.setFlag(MODULE_ID, 'spellEffect', {
+      type: 'buff',
+      buffType,
+      bonusValue,
+      highlightColor,
+      requestId,
+      triggeredBy,
+      appliedAt: Date.now(),
+    })
+
+    // Re-render the actor sheet so the visual highlighting hook fires
+    actor.sheet?.render(false)
+
+    // Send chat message
+    const buffLabel = buffType === 'advantage' ? 'avantage' : `+${bonusValue}`
+    await ChatMessage.create({
+      content: `
+        <div class="tumulte-spell-effect tumulte-spell-buff">
+          <div class="tumulte-spell-effect-header">
+            <img src="${spell.img}" width="32" height="32"/>
+            <div>
+              <strong>${spell.name}</strong> a été <em>amplifié</em> (${buffLabel}) !
+              <br/><small>Déclenché par <strong>${triggeredBy}</strong></small>
+            </div>
+          </div>
+        </div>
+      `,
+      speaker: { alias: 'Tumulte' },
+    })
+
+    Logger.info('Spell buffed', { spellName: spell.name, buffType, bonusValue })
+  }
+
+  /**
+   * Apply spell debuff effect
+   * Flags the spell so the SpellEffectCollector applies disadvantage/penalty on next cast
+   */
+  async _applySpellDebuff(actor, spell, effect, requestId) {
+    const triggeredBy = effect.triggeredBy || 'le chat'
+    const debuffType = effect.debuffType || 'disadvantage'
+    const penaltyValue = effect.penaltyValue || 2
+    const highlightColor = effect.highlightColor || '#EF4444'
+
+    // Set the debuff flag — will be consumed by SpellEffectCollector on next cast
+    await spell.setFlag(MODULE_ID, 'spellEffect', {
+      type: 'debuff',
+      debuffType,
+      penaltyValue,
+      highlightColor,
+      requestId,
+      triggeredBy,
+      appliedAt: Date.now(),
+    })
+
+    // Re-render the actor sheet so the visual highlighting hook fires
+    actor.sheet?.render(false)
+
+    // Send chat message
+    const debuffLabel = debuffType === 'disadvantage' ? 'désavantage' : `-${penaltyValue}`
+    await ChatMessage.create({
+      content: `
+        <div class="tumulte-spell-effect tumulte-spell-debuff">
+          <div class="tumulte-spell-effect-header">
+            <img src="${spell.img}" width="32" height="32"/>
+            <div>
+              <strong>${spell.name}</strong> a été <em>maudit</em> (${debuffLabel}) !
+              <br/><small>Déclenché par <strong>${triggeredBy}</strong></small>
+            </div>
+          </div>
+        </div>
+      `,
+      speaker: { alias: 'Tumulte' },
+    })
+
+    Logger.info('Spell debuffed', { spellName: spell.name, debuffType, penaltyValue })
+  }
+
+  /**
+   * Re-enable a spell that was disabled by Tumulte
+   */
+  async _reEnableSpell(actorId, spellId) {
+    try {
+      const actor = game.actors.get(actorId)
+      if (!actor) {
+        Logger.warn('Cannot re-enable spell: actor not found', { actorId })
+        return
+      }
+
+      const spell = actor.items.get(spellId)
+      if (!spell) {
+        Logger.warn('Cannot re-enable spell: spell not found', { actorId, spellId })
+        return
+      }
+
+      const disabledFlag = spell.getFlag(MODULE_ID, 'disabled')
+      if (!disabledFlag) {
+        Logger.debug('Spell already re-enabled (no flag)', { spellName: spell.name })
+        return
+      }
+
+      // Restore original prepared state (D&D 5e)
+      const systemId = game.system.id
+      if (systemId === 'dnd5e' && disabledFlag.originalPrepared !== undefined) {
+        await spell.update({ 'system.preparation.prepared': disabledFlag.originalPrepared })
+      }
+
+      // Remove the disabled flag
+      await spell.unsetFlag(MODULE_ID, 'disabled')
+
+      // Re-render the actor sheet to remove the visual highlighting
+      actor.sheet?.render(false)
+
+      // Clean up timer reference
+      if (this._spellDisableTimers) {
+        this._spellDisableTimers.delete(`${actorId}.${spellId}`)
+      }
+
+      // Send chat message
+      const enableMessage = disabledFlag.enableMessage || null
+      await ChatMessage.create({
+        content: `
+          <div class="tumulte-spell-effect tumulte-spell-reenable">
+            <div class="tumulte-spell-effect-header">
+              <img src="${spell.img}" width="32" height="32"/>
+              <div>
+                <strong>${spell.name}</strong> est de nouveau disponible !
+                ${enableMessage ? `<br/><small>${enableMessage}</small>` : ''}
+              </div>
+            </div>
+          </div>
+        `,
+        speaker: { alias: 'Tumulte' },
+      })
+
+      Logger.info('Spell re-enabled', { spellName: spell.name, actorId })
+
+      // Notify backend
+      this.emit('spell:effect:expired', {
+        actorId,
+        spellId,
+        spellName: spell.name,
+        effectType: 'disable',
+        requestId: disabledFlag.requestId,
+      })
+
+    } catch (error) {
+      Logger.error('Failed to re-enable spell', { actorId, spellId, error: error.message })
+    }
+  }
+
+  /**
+   * Handle remove_spell_effect command from Tumulte
+   * Manually removes a spell effect (e.g., GM override)
+   */
+  async handleCommandRemoveSpellEffect(data) {
+    const { actorId, spellId, requestId } = data
+
+    Logger.info('Received remove_spell_effect command', { actorId, spellId, requestId })
+
+    try {
+      const actor = game.actors.get(actorId)
+      if (!actor) {
+        throw new Error(`Actor not found: ${actorId}`)
+      }
+
+      const spell = actor.items.get(spellId)
+      if (!spell) {
+        throw new Error(`Spell not found: ${spellId}`)
+      }
+
+      // Remove disabled flag and re-enable if needed
+      const disabledFlag = spell.getFlag(MODULE_ID, 'disabled')
+      if (disabledFlag) {
+        // Clear the timer
+        if (this._spellDisableTimers) {
+          const timerKey = `${actorId}.${spellId}`
+          const timerId = this._spellDisableTimers.get(timerKey)
+          if (timerId) {
+            clearTimeout(timerId)
+            this._spellDisableTimers.delete(timerKey)
+          }
+        }
+
+        // Restore prepared state
+        if (game.system.id === 'dnd5e' && disabledFlag.originalPrepared !== undefined) {
+          await spell.update({ 'system.preparation.prepared': disabledFlag.originalPrepared })
+        }
+
+        await spell.unsetFlag(MODULE_ID, 'disabled')
+      }
+
+      // Remove buff/debuff flag
+      const effectFlag = spell.getFlag(MODULE_ID, 'spellEffect')
+      if (effectFlag) {
+        await spell.unsetFlag(MODULE_ID, 'spellEffect')
+      }
+
+      // Re-render the actor sheet to remove the visual highlighting
+      actor.sheet?.render(false)
+
+      Logger.info('Spell effect removed manually', { requestId, spellName: spell.name })
+      this.dispatchEvent(new CustomEvent('command-executed', {
+        detail: { command: 'remove_spell_effect', requestId, success: true }
+      }))
+
+    } catch (error) {
+      Logger.error('Failed to execute remove_spell_effect command', error)
+      this.dispatchEvent(new CustomEvent('command-executed', {
+        detail: { command: 'remove_spell_effect', requestId, success: false, error: error.message }
+      }))
+    }
+  }
+
+  /**
+   * Handle cleanup_all_effects command — bulk remove ALL Tumulte effects from Foundry
+   * Scans all actors/items, clears flags, restores spell states, cancels timers
+   */
+  async handleCommandCleanupAllEffects(data) {
+    const { requestId, cleanChat = false } = data
+    const results = { disabledRestored: 0, effectsRemoved: 0, timersCleared: 0, messagesDeleted: 0 }
+
+    Logger.info('Received cleanup_all_effects command', { requestId, cleanChat })
+
+    try {
+      // 1. Cancel all spell disable timers
+      if (this._spellDisableTimers) {
+        for (const [key, timerId] of this._spellDisableTimers.entries()) {
+          clearTimeout(timerId)
+          results.timersCleared++
+        }
+        this._spellDisableTimers.clear()
+      }
+
+      // 2. Scan all actors and their items
+      for (const actor of game.actors) {
+        let actorModified = false
+
+        for (const item of actor.items) {
+          // 2a. Restore disabled spells
+          const disabledFlag = item.getFlag(MODULE_ID, 'disabled')
+          if (disabledFlag) {
+            // Restore D&D 5e prepared state
+            if (game.system.id === 'dnd5e' && disabledFlag.originalPrepared !== undefined) {
+              await item.update({ 'system.preparation.prepared': disabledFlag.originalPrepared })
+            }
+            await item.unsetFlag(MODULE_ID, 'disabled')
+            results.disabledRestored++
+            actorModified = true
+          }
+
+          // 2b. Remove buff/debuff effects
+          const effectFlag = item.getFlag(MODULE_ID, 'spellEffect')
+          if (effectFlag) {
+            await item.unsetFlag(MODULE_ID, 'spellEffect')
+            results.effectsRemoved++
+            actorModified = true
+          }
+        }
+
+        // Re-render actor sheet if any flags were removed
+        if (actorModified) {
+          actor.sheet?.render(false)
+        }
+      }
+
+      // 3. Optionally clean Tumulte chat messages
+      if (cleanChat) {
+        const tumulteMessages = game.messages.filter(m => m.speaker?.alias === 'Tumulte')
+        for (const msg of tumulteMessages) {
+          await msg.delete()
+          results.messagesDeleted++
+        }
+      }
+
+      // 4. Post summary chat message
+      const total = results.disabledRestored + results.effectsRemoved + results.timersCleared
+      if (total > 0 || cleanChat) {
+        await ChatMessage.create({
+          content: `
+            <div class="tumulte-spell-effect tumulte-cleanup-summary">
+              <div class="tumulte-spell-effect-header">
+                <div>
+                  <strong>Nettoyage Tumulte effectué</strong>
+                  <br/><small>
+                    Sorts réactivés : ${results.disabledRestored},
+                    Effets supprimés : ${results.effectsRemoved},
+                    Timers annulés : ${results.timersCleared}
+                    ${cleanChat ? `, Messages supprimés : ${results.messagesDeleted}` : ''}
+                  </small>
+                </div>
+              </div>
+            </div>
+          `,
+          speaker: { alias: 'Tumulte' },
+        })
+      }
+
+      Logger.info('Cleanup all effects completed', results)
+
+      this.dispatchEvent(new CustomEvent('command-executed', {
+        detail: { command: 'cleanup_all_effects', requestId, success: true, results }
+      }))
+
+    } catch (error) {
+      Logger.error('Failed to execute cleanup_all_effects command', error)
+      this.dispatchEvent(new CustomEvent('command-executed', {
+        detail: { command: 'cleanup_all_effects', requestId, success: false, error: error.message }
+      }))
+    }
+  }
+
+  /**
+   * Recover spell effects after page reload
+   * Called from tumulte.js on the 'ready' hook after connection is established
+   */
+  async recoverSpellEffects() {
+    if (!game.actors) return
+
+    Logger.info('Recovering spell effects after reload...')
+    let recovered = 0
+    let expired = 0
+
+    for (const actor of game.actors) {
+      for (const item of actor.items) {
+        // Check for disabled spells
+        const disabledFlag = item.getFlag(MODULE_ID, 'disabled')
+        if (disabledFlag) {
+          const now = Date.now()
+          const expiresAt = disabledFlag.expiresAt || (disabledFlag.disabledAt + disabledFlag.durationMs)
+
+          if (now >= expiresAt) {
+            // Already expired — re-enable immediately
+            Logger.info('Recovering expired disabled spell', { spellName: item.name, actorName: actor.name })
+            await this._reEnableSpell(actor.id, item.id)
+            expired++
+          } else {
+            // Still active — schedule re-enable for remaining time
+            const remainingMs = expiresAt - now
+            Logger.info('Recovering active disabled spell', {
+              spellName: item.name,
+              actorName: actor.name,
+              remainingMs,
+            })
+
+            if (!this._spellDisableTimers) this._spellDisableTimers = new Map()
+            const timeoutId = setTimeout(() => {
+              this._reEnableSpell(actor.id, item.id)
+            }, remainingMs)
+            this._spellDisableTimers.set(`${actor.id}.${item.id}`, timeoutId)
+            recovered++
+          }
+        }
+
+        // Buff/debuff flags persist without timers — they're consumed on cast
+        const effectFlag = item.getFlag(MODULE_ID, 'spellEffect')
+        if (effectFlag) {
+          Logger.info('Found persisted spell effect', {
+            spellName: item.name,
+            actorName: actor.name,
+            effectType: effectFlag.type,
+          })
+          recovered++
+        }
+      }
+    }
+
+    Logger.info('Spell effect recovery complete', { recovered, expired })
   }
 }
 
