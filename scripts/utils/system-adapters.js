@@ -1838,14 +1838,17 @@ class Vtm5eAdapter extends GenericAdapter {
   extractStats(actor) {
     if (!actor?.system) return super.extractStats(actor)
 
-    const system = actor.system
+    const s = actor.system
     return {
       name: actor.name,
       type: actor.type,
-      clan: system.clan?.value || '',
-      hunger: system.hunger?.value || 0,
-      health: system.health?.value || 0,
-      willpower: system.willpower?.value || 0,
+      clan: s.clan?.value || '',
+      generation: s.generation?.value || 0,
+      hunger: s.hunger?.value || 0,
+      health: { value: s.health?.value || 0, max: s.health?.max || 0 },
+      willpower: { value: s.willpower?.value || 0, max: s.willpower?.max || 0 },
+      humanity: s.humanity?.value || 0,
+      bloodPotency: s.blood?.potency || 0,
     }
   }
 
@@ -1972,13 +1975,18 @@ class ShadowrunAdapter extends GenericAdapter {
   extractStats(actor) {
     if (!actor?.system) return super.extractStats(actor)
 
-    const system = actor.system
+    const s = actor.system
     return {
       name: actor.name,
       type: actor.type,
-      metatype: system.metatype || '',
-      essence: system.essence?.value || 6,
-      edge: system.edge?.value || 0,
+      metatype: s.metatype || '',
+      essence: s.essence?.value || 6,
+      edge: { value: s.edge?.value || 0, max: s.edge?.max || 0 },
+      magic: s.magic?.value || 0,
+      resonance: s.resonance?.value || 0,
+      initiative: s.initiative?.value || 0,
+      physicalDamage: s.track?.physical?.value || 0,
+      stunDamage: s.track?.stun?.value || 0,
     }
   }
 
@@ -2124,20 +2132,17 @@ class StarWarsFFGAdapter extends GenericAdapter {
   extractStats(actor) {
     if (!actor?.system) return super.extractStats(actor)
 
-    const system = actor.system
+    const s = actor.system
     return {
       name: actor.name,
       type: actor.type,
-      species: system.species?.value || '',
-      career: system.career?.value || '',
-      wounds: {
-        current: system.stats?.wounds?.value || 0,
-        max: system.stats?.wounds?.max || 0,
-      },
-      strain: {
-        current: system.stats?.strain?.value || 0,
-        max: system.stats?.strain?.max || 0,
-      },
+      species: s.species?.value || '',
+      career: s.career?.value || '',
+      wounds: { current: s.stats?.wounds?.value || 0, max: s.stats?.wounds?.max || 0 },
+      strain: { current: s.stats?.strain?.value || 0, max: s.stats?.strain?.max || 0 },
+      soak: s.stats?.soak?.value || 0,
+      defense: { melee: s.stats?.defence?.melee || 0, ranged: s.stats?.defence?.ranged || 0 },
+      forceRating: s.stats?.forcePool?.max || 0,
     }
   }
 
@@ -2241,13 +2246,35 @@ class FateAdapter extends GenericAdapter {
   extractStats(actor) {
     if (!actor?.system) return super.extractStats(actor)
 
-    const system = actor.system
+    const s = actor.system
     return {
       name: actor.name,
       type: actor.type,
-      refresh: system.fatePoints?.refresh || 0,
-      current: system.fatePoints?.current || 0,
+      refresh: s.fatePoints?.refresh || 0,
+      current: s.fatePoints?.current || 0,
+      stress: this._extractStressTracks(s),
+      consequences: this._extractConsequences(s),
     }
+  }
+
+  _extractStressTracks(system) {
+    const tracks = []
+    for (const [key, track] of Object.entries(system.tracks || {})) {
+      if (track?.enabled) {
+        tracks.push({ name: track.name || key, boxes: track.size || 0, marked: track.value || 0 })
+      }
+    }
+    return tracks
+  }
+
+  _extractConsequences(system) {
+    const consequences = []
+    for (const [key, con] of Object.entries(system.consequences || {})) {
+      if (con?.name) {
+        consequences.push({ name: con.name, severity: con.severity || key, active: !!con.value })
+      }
+    }
+    return consequences
   }
 
   // FATE: extras/powers can act as "spells" in FATE-based settings

@@ -351,27 +351,51 @@ export class CombatCollector {
   }
 
   /**
-   * Extract HP from actor
+   * Extract HP from actor (multi-system support)
    */
   extractHP(actor) {
-    const system = actor.system
+    const s = actor.system
+    if (!s) return null
 
-    // D&D 5e / Generic
-    if (system?.attributes?.hp) {
-      return {
-        current: system.attributes.hp.value,
-        max: system.attributes.hp.max,
-        temp: system.attributes.hp.temp || 0
-      }
+    // D&D 5e / PF2e / Generic (system.attributes.hp)
+    if (s.attributes?.hp) {
+      return { current: s.attributes.hp.value, max: s.attributes.hp.max, temp: s.attributes.hp.temp || 0 }
     }
-
-    // PF2e
-    if (system?.attributes?.hp?.value !== undefined) {
-      return {
-        current: system.attributes.hp.value,
-        max: system.attributes.hp.max,
-        temp: system.attributes.hp.temp || 0
-      }
+    // CoC7 (system.hp)
+    if (s.hp?.value !== undefined) {
+      return { current: s.hp.value, max: s.hp.max, temp: 0 }
+    }
+    // WFRP4e (system.status.wounds)
+    if (s.status?.wounds) {
+      return { current: s.status.wounds.value, max: s.status.wounds.max, temp: 0 }
+    }
+    // SWADE (system.wounds)
+    if (s.wounds?.value !== undefined && s.wounds?.max !== undefined) {
+      return { current: s.wounds.value, max: s.wounds.max, temp: 0 }
+    }
+    // Cyberpunk RED (system.derivedStats.hp)
+    if (s.derivedStats?.hp) {
+      return { current: s.derivedStats.hp.value, max: s.derivedStats.hp.max, temp: 0 }
+    }
+    // Alien RPG (system.header.health)
+    if (s.header?.health) {
+      return { current: s.header.health.value, max: s.header.health.max, temp: 0 }
+    }
+    // Star Wars FFG (system.stats.wounds)
+    if (s.stats?.wounds) {
+      return { current: s.stats.wounds.value, max: s.stats.wounds.max, temp: 0 }
+    }
+    // Shadowrun (system.track.physical)
+    if (s.track?.physical) {
+      return { current: s.track.physical.value, max: s.track.physical.max, temp: 0 }
+    }
+    // Forbidden Lands (system.attribute.strength = HP)
+    if (s.attribute?.strength) {
+      return { current: s.attribute.strength.value, max: s.attribute.strength.max, temp: 0 }
+    }
+    // Vaesen (system.condition.physical)
+    if (s.condition?.physical) {
+      return { current: s.condition.physical.value, max: s.condition.physical.max, temp: 0 }
     }
 
     return null

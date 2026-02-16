@@ -1312,7 +1312,143 @@ export class TumulteSocketClient extends EventTarget {
   }
 
   /**
+   * Get system-specific monster stat paths for HP/AC updates.
+   * Returns read/write helpers for the current game system.
+   */
+  _getMonsterStatPaths() {
+    const systemId = game.system?.id
+    switch (systemId) {
+      case 'dnd5e':
+      case 'pf2e':
+      case 'a5e':
+        return {
+          hp: { value: 'system.attributes.hp.value', max: 'system.attributes.hp.max', temp: 'system.attributes.hp.temp' },
+          ac: { value: 'system.attributes.ac.value' },
+          read: (a) => ({
+            hp: a.system?.attributes?.hp?.value ?? 0,
+            hpMax: a.system?.attributes?.hp?.max ?? 10,
+            hpTemp: a.system?.attributes?.hp?.temp ?? 0,
+            ac: a.system?.attributes?.ac?.value ?? 10,
+          }),
+        }
+      case 'CoC7':
+        return {
+          hp: { value: 'system.hp.value', max: 'system.hp.max', temp: null },
+          ac: { value: null },
+          read: (a) => ({
+            hp: a.system?.hp?.value ?? 0,
+            hpMax: a.system?.hp?.max ?? 10,
+            hpTemp: 0,
+            ac: null,
+          }),
+        }
+      case 'wfrp4e':
+        return {
+          hp: { value: 'system.status.wounds.value', max: 'system.status.wounds.max', temp: null },
+          ac: { value: null },
+          read: (a) => ({
+            hp: a.system?.status?.wounds?.value ?? 0,
+            hpMax: a.system?.status?.wounds?.max ?? 10,
+            hpTemp: 0,
+            ac: null,
+          }),
+        }
+      case 'swade':
+        return {
+          hp: { value: 'system.wounds.value', max: 'system.wounds.max', temp: null },
+          ac: { value: 'system.stats.toughness.value' },
+          read: (a) => ({
+            hp: a.system?.wounds?.value ?? 0,
+            hpMax: a.system?.wounds?.max ?? 3,
+            hpTemp: 0,
+            ac: a.system?.stats?.toughness?.value ?? 4,
+          }),
+        }
+      case 'cyberpunk-red-core':
+        return {
+          hp: { value: 'system.derivedStats.hp.value', max: 'system.derivedStats.hp.max', temp: null },
+          ac: { value: 'system.derivedStats.sp.value' },
+          read: (a) => ({
+            hp: a.system?.derivedStats?.hp?.value ?? 0,
+            hpMax: a.system?.derivedStats?.hp?.max ?? 10,
+            hpTemp: 0,
+            ac: a.system?.derivedStats?.sp?.value ?? 0,
+          }),
+        }
+      case 'alienrpg':
+        return {
+          hp: { value: 'system.header.health.value', max: 'system.header.health.max', temp: null },
+          ac: { value: null },
+          read: (a) => ({
+            hp: a.system?.header?.health?.value ?? 0,
+            hpMax: a.system?.header?.health?.max ?? 10,
+            hpTemp: 0,
+            ac: null,
+          }),
+        }
+      case 'starwarsffg':
+        return {
+          hp: { value: 'system.stats.wounds.value', max: 'system.stats.wounds.max', temp: null },
+          ac: { value: 'system.stats.soak.value' },
+          read: (a) => ({
+            hp: a.system?.stats?.wounds?.value ?? 0,
+            hpMax: a.system?.stats?.wounds?.max ?? 10,
+            hpTemp: 0,
+            ac: a.system?.stats?.soak?.value ?? 0,
+          }),
+        }
+      case 'shadowrun5e':
+      case 'shadowrun6e':
+      case 'shadowrun6-eden':
+        return {
+          hp: { value: 'system.track.physical.value', max: 'system.track.physical.max', temp: null },
+          ac: { value: 'system.armor.value' },
+          read: (a) => ({
+            hp: a.system?.track?.physical?.value ?? 0,
+            hpMax: a.system?.track?.physical?.max ?? 10,
+            hpTemp: 0,
+            ac: a.system?.armor?.value ?? 0,
+          }),
+        }
+      case 'forbidden-lands':
+        return {
+          hp: { value: 'system.attribute.strength.value', max: 'system.attribute.strength.max', temp: null },
+          ac: { value: 'system.armor.value' },
+          read: (a) => ({
+            hp: a.system?.attribute?.strength?.value ?? 0,
+            hpMax: a.system?.attribute?.strength?.max ?? 10,
+            hpTemp: 0,
+            ac: a.system?.armor?.value ?? 0,
+          }),
+        }
+      case 'vaesen':
+        return {
+          hp: { value: 'system.condition.physical.value', max: 'system.condition.physical.max', temp: null },
+          ac: { value: null },
+          read: (a) => ({
+            hp: a.system?.condition?.physical?.value ?? 0,
+            hpMax: a.system?.condition?.physical?.max ?? 10,
+            hpTemp: 0,
+            ac: null,
+          }),
+        }
+      default:
+        return {
+          hp: { value: 'system.attributes.hp.value', max: 'system.attributes.hp.max', temp: 'system.attributes.hp.temp' },
+          ac: { value: 'system.attributes.ac.value' },
+          read: (a) => ({
+            hp: a.system?.attributes?.hp?.value ?? 0,
+            hpMax: a.system?.attributes?.hp?.max ?? 10,
+            hpTemp: a.system?.attributes?.hp?.temp ?? 0,
+            ac: a.system?.attributes?.ac?.value ?? 10,
+          }),
+        }
+    }
+  }
+
+  /**
    * Apply monster buff: +AC bonus and temporary HP
+   * Uses system-specific HP/AC paths via _getMonsterStatPaths()
    */
   async _applyMonsterBuff(actor, token, effect, requestId) {
     const acBonus = effect.acBonus ?? 2
@@ -1320,25 +1456,28 @@ export class TumulteSocketClient extends EventTarget {
     const highlightColor = effect.highlightColor || '#10B981'
     const triggeredBy = effect.triggeredBy || 'le chat'
 
-    // Store original values and effect info as actor flag
-    const currentTempHp = actor.system?.attributes?.hp?.temp ?? 0
-    const originalAc = actor.system?.attributes?.ac?.value ?? 10
+    const paths = this._getMonsterStatPaths()
+    const stats = paths.read(actor)
 
     await actor.setFlag(MODULE_ID, 'monsterEffect', {
       type: 'buff',
       acBonus,
       tempHp,
-      originalAc,
+      originalAc: stats.ac,
       highlightColor,
       requestId,
       triggeredBy,
       appliedAt: Date.now(),
     })
 
-    // Apply temporary HP (additive)
-    await actor.update({
-      'system.attributes.hp.temp': currentTempHp + tempHp,
-    })
+    // Apply temporary HP (additive if temp path exists, otherwise boost current HP)
+    const updates = {}
+    if (paths.hp.temp) {
+      updates[paths.hp.temp] = stats.hpTemp + tempHp
+    } else {
+      updates[paths.hp.value] = Math.min(stats.hp + tempHp, stats.hpMax)
+    }
+    await actor.update(updates)
 
     // Apply token halo flag for visual rendering
     if (token) {
@@ -1347,7 +1486,6 @@ export class TumulteSocketClient extends EventTarget {
         color: highlightColor,
         type: 'buff',
       })
-      // Force token refresh to trigger the refreshToken hook (renders halo)
       token.refresh()
     }
 
@@ -1355,12 +1493,14 @@ export class TumulteSocketClient extends EventTarget {
       monsterName: actor.name,
       acBonus,
       tempHp,
-      originalAc,
+      originalAc: stats.ac,
+      systemId: game.system?.id,
     })
   }
 
   /**
    * Apply monster debuff: -AC penalty and max HP reduction
+   * Uses system-specific HP/AC paths via _getMonsterStatPaths()
    */
   async _applyMonsterDebuff(actor, token, effect, requestId) {
     const acPenalty = effect.acPenalty ?? 2
@@ -1368,16 +1508,15 @@ export class TumulteSocketClient extends EventTarget {
     const highlightColor = effect.highlightColor || '#EF4444'
     const triggeredBy = effect.triggeredBy || 'le chat'
 
-    // Store original values for restoration
-    const originalMaxHp = actor.system?.attributes?.hp?.max ?? 10
-    const originalAc = actor.system?.attributes?.ac?.value ?? 10
+    const paths = this._getMonsterStatPaths()
+    const stats = paths.read(actor)
 
     await actor.setFlag(MODULE_ID, 'monsterEffect', {
       type: 'debuff',
       acPenalty,
       maxHpReduction,
-      originalMaxHp,
-      originalAc,
+      originalMaxHp: stats.hpMax,
+      originalAc: stats.ac,
       highlightColor,
       requestId,
       triggeredBy,
@@ -1385,13 +1524,12 @@ export class TumulteSocketClient extends EventTarget {
     })
 
     // Reduce max HP (clamp current HP if needed)
-    const currentHp = actor.system?.attributes?.hp?.value ?? originalMaxHp
-    const newMaxHp = Math.max(1, originalMaxHp - maxHpReduction)
+    const newMaxHp = Math.max(1, stats.hpMax - maxHpReduction)
     const updates = {
-      'system.attributes.hp.max': newMaxHp,
+      [paths.hp.max]: newMaxHp,
     }
-    if (currentHp > newMaxHp) {
-      updates['system.attributes.hp.value'] = newMaxHp
+    if (stats.hp > newMaxHp) {
+      updates[paths.hp.value] = newMaxHp
     }
     await actor.update(updates)
 
@@ -1402,7 +1540,6 @@ export class TumulteSocketClient extends EventTarget {
         color: highlightColor,
         type: 'debuff',
       })
-      // Force token refresh to trigger the refreshToken hook (renders halo)
       token.refresh()
     }
 
@@ -1410,8 +1547,9 @@ export class TumulteSocketClient extends EventTarget {
       monsterName: actor.name,
       acPenalty,
       maxHpReduction,
-      originalMaxHp,
+      originalMaxHp: stats.hpMax,
       newMaxHp,
+      systemId: game.system?.id,
     })
   }
 
@@ -1447,21 +1585,23 @@ export class TumulteSocketClient extends EventTarget {
 
   /**
    * Remove a monster effect from an actor, restoring original values
+   * Uses system-specific HP/AC paths via _getMonsterStatPaths()
    */
   async _removeMonsterEffect(actor) {
     const effectFlag = actor.getFlag(MODULE_ID, 'monsterEffect')
     if (!effectFlag) return false
 
+    const paths = this._getMonsterStatPaths()
+
     if (effectFlag.type === 'debuff' && effectFlag.originalMaxHp) {
-      // Restore original max HP
-      const currentHp = actor.system?.attributes?.hp?.value ?? 0
+      const stats = paths.read(actor)
       const updates = {
-        'system.attributes.hp.max': effectFlag.originalMaxHp,
+        [paths.hp.max]: effectFlag.originalMaxHp,
       }
       // Restore current HP proportionally if it was clamped
-      if (currentHp <= actor.system?.attributes?.hp?.max) {
-        const ratio = currentHp / (actor.system?.attributes?.hp?.max || 1)
-        updates['system.attributes.hp.value'] = Math.round(ratio * effectFlag.originalMaxHp)
+      if (stats.hp <= stats.hpMax) {
+        const ratio = stats.hp / (stats.hpMax || 1)
+        updates[paths.hp.value] = Math.round(ratio * effectFlag.originalMaxHp)
       }
       await actor.update(updates)
     }
@@ -1475,7 +1615,6 @@ export class TumulteSocketClient extends EventTarget {
       const haloFlag = token.document.getFlag(MODULE_ID, 'monsterHalo')
       if (haloFlag) {
         await token.document.unsetFlag(MODULE_ID, 'monsterHalo')
-        // Force token refresh to remove the glow filter visually
         token.refresh()
       }
     }
