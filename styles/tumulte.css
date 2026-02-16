@@ -815,3 +815,423 @@
 .tumulte-stop-waiting:hover {
   background: var(--tumulte-gray-700);
 }
+
+/* ==================================
+   Spell Effect Chat Messages
+   ================================== */
+.tumulte-spell-effect {
+  padding: 8px 12px;
+  border-radius: var(--tumulte-radius);
+  border-left: 4px solid;
+  margin: 4px 0;
+}
+
+.tumulte-spell-effect-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tumulte-spell-effect-header img {
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--tumulte-radius);
+  flex-shrink: 0;
+}
+
+.tumulte-spell-effect-header div {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.tumulte-spell-effect-header small {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Disable effect (violet) */
+.tumulte-spell-disable {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(139, 92, 246, 0.05));
+  border-left-color: #8B5CF6;
+  color: #c4b5fd;
+}
+
+.tumulte-spell-disable img {
+  border-color: rgba(139, 92, 246, 0.4);
+}
+
+/* Buff effect (green) */
+.tumulte-spell-buff {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.05));
+  border-left-color: #10B981;
+  color: #6ee7b7;
+}
+
+.tumulte-spell-buff img {
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+/* Debuff effect (red) */
+.tumulte-spell-debuff {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.05));
+  border-left-color: #EF4444;
+  color: #fca5a5;
+}
+
+.tumulte-spell-debuff img {
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+/* Re-enable message (green) */
+.tumulte-spell-reenable {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(34, 197, 94, 0.05));
+  border-left-color: #22c55e;
+  color: #86efac;
+}
+
+.tumulte-spell-reenable img {
+  border-color: rgba(34, 197, 94, 0.4);
+}
+
+/* Consumed effect message */
+.tumulte-spell-effect-consumed {
+  padding: 6px 10px;
+  border-radius: var(--tumulte-radius);
+  background: rgba(107, 114, 128, 0.1);
+  border-left: 3px solid var(--tumulte-gray-300);
+  font-size: 12px;
+  color: var(--tumulte-gray-600);
+}
+
+/* Light theme overrides for spell messages */
+.tumulte-spell-disable {
+  color: #5b21b6;
+}
+
+.tumulte-spell-disable small {
+  color: #7c3aed;
+}
+
+.tumulte-spell-buff {
+  color: #065f46;
+}
+
+.tumulte-spell-buff small {
+  color: #059669;
+}
+
+.tumulte-spell-debuff {
+  color: #991b1b;
+}
+
+.tumulte-spell-debuff small {
+  color: #dc2626;
+}
+
+.tumulte-spell-reenable {
+  color: #166534;
+}
+
+.tumulte-spell-reenable small {
+  color: #16a34a;
+}
+
+/* Dark theme overrides for spell messages */
+.dark-theme .tumulte-spell-disable {
+  color: #c4b5fd;
+}
+
+.dark-theme .tumulte-spell-disable small {
+  color: rgba(196, 181, 253, 0.7);
+}
+
+.dark-theme .tumulte-spell-buff {
+  color: #6ee7b7;
+}
+
+.dark-theme .tumulte-spell-buff small {
+  color: rgba(110, 231, 183, 0.7);
+}
+
+.dark-theme .tumulte-spell-debuff {
+  color: #fca5a5;
+}
+
+.dark-theme .tumulte-spell-debuff small {
+  color: rgba(252, 165, 165, 0.7);
+}
+
+.dark-theme .tumulte-spell-reenable {
+  color: #86efac;
+}
+
+.dark-theme .tumulte-spell-reenable small {
+  color: rgba(134, 239, 172, 0.7);
+}
+
+/* ==================================
+   Spell Effect Visual on Actor Sheets
+   ================================== */
+
+/* Disabled item — grayed out with striped violet background */
+.tumulte-spell-item-disabled {
+  opacity: 0.45;
+  position: relative;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 10px,
+    rgba(139, 92, 246, 0.05) 10px,
+    rgba(139, 92, 246, 0.05) 20px
+  ) !important;
+  border-left: 3px solid #8B5CF6 !important;
+  pointer-events: auto;
+}
+
+/* Buffed item — green glow with pulse animation */
+.tumulte-spell-item-buffed {
+  position: relative;
+  border-left: 3px solid #10B981 !important;
+  background: rgba(16, 185, 129, 0.08) !important;
+  animation: tumulte-pulse-buff 2s ease-in-out infinite;
+}
+
+/* Debuffed item — red glow with pulse animation */
+.tumulte-spell-item-debuffed {
+  position: relative;
+  border-left: 3px solid #EF4444 !important;
+  background: rgba(239, 68, 68, 0.08) !important;
+  animation: tumulte-pulse-debuff 2s ease-in-out infinite;
+}
+
+/* Pulse animations */
+@keyframes tumulte-pulse-buff {
+  0%, 100% { box-shadow: inset 0 0 8px rgba(16, 185, 129, 0.15); }
+  50% { box-shadow: inset 0 0 14px rgba(16, 185, 129, 0.3); }
+}
+
+@keyframes tumulte-pulse-debuff {
+  0%, 100% { box-shadow: inset 0 0 8px rgba(239, 68, 68, 0.15); }
+  50% { box-shadow: inset 0 0 14px rgba(239, 68, 68, 0.3); }
+}
+
+/* ==================================
+   Badge Pills (injected into item rows)
+   ================================== */
+
+.tumulte-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.tumulte-badge-disabled {
+  background: rgba(139, 92, 246, 0.15);
+  color: #8B5CF6;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.tumulte-badge-buff {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10B981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.tumulte-badge-debuff {
+  background: rgba(239, 68, 68, 0.15);
+  color: #EF4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* Countdown timer inside badge */
+.tumulte-countdown {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+  margin-left: 2px;
+}
+
+/* ==================================
+   Rich Tooltip
+   ================================== */
+
+.tumulte-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  min-width: 180px;
+  max-width: 260px;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  white-space: normal;
+}
+
+.tumulte-tooltip-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.tumulte-tooltip-detail {
+  opacity: 0.8;
+  font-size: 11px;
+}
+
+/* ==================================
+   Item Sheet Banner
+   ================================== */
+
+.tumulte-item-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin: 0 8px 8px;
+  border-radius: var(--tumulte-radius);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.tumulte-item-banner i {
+  font-size: 14px;
+}
+
+.tumulte-item-banner small {
+  font-weight: 400;
+}
+
+.tumulte-item-disabled {
+  background: rgba(139, 92, 246, 0.1);
+  color: #7c3aed;
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.tumulte-item-buffed {
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.tumulte-item-debuffed {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+/* ==================================
+   Monster Effect Chat Messages
+   ================================== */
+.tumulte-monster-effect {
+  padding: 8px 12px;
+  border-radius: var(--tumulte-radius);
+  border-left: 4px solid;
+  margin: 4px 0;
+}
+
+.tumulte-monster-effect-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tumulte-monster-effect-header img {
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--tumulte-radius);
+  flex-shrink: 0;
+  object-fit: cover;
+}
+
+.tumulte-monster-effect-header div {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.tumulte-monster-effect-header small {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Buff effect (green) */
+.tumulte-monster-buff {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(16, 185, 129, 0.05));
+  border-left-color: #10B981;
+  color: #065f46;
+}
+
+.tumulte-monster-buff img {
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.tumulte-monster-buff small {
+  color: #059669;
+}
+
+/* Debuff effect (red) */
+.tumulte-monster-debuff {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.05));
+  border-left-color: #EF4444;
+  color: #991b1b;
+}
+
+.tumulte-monster-debuff img {
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.tumulte-monster-debuff small {
+  color: #dc2626;
+}
+
+/* Cleanup summary message */
+.tumulte-monster-cleanup {
+  background: linear-gradient(135deg, rgba(107, 114, 128, 0.15), rgba(107, 114, 128, 0.05));
+  border-left-color: var(--tumulte-gray-300);
+  color: var(--tumulte-gray-700);
+}
+
+.tumulte-monster-cleanup small {
+  color: var(--tumulte-gray-600);
+}
+
+/* Dark theme overrides for monster messages */
+.dark-theme .tumulte-monster-buff {
+  color: #6ee7b7;
+}
+
+.dark-theme .tumulte-monster-buff small {
+  color: rgba(110, 231, 183, 0.7);
+}
+
+.dark-theme .tumulte-monster-debuff {
+  color: #fca5a5;
+}
+
+.dark-theme .tumulte-monster-debuff small {
+  color: rgba(252, 165, 165, 0.7);
+}
+
+.dark-theme .tumulte-monster-cleanup {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.dark-theme .tumulte-monster-cleanup small {
+  color: rgba(255, 255, 255, 0.5);
+}
