@@ -17,9 +17,15 @@ export class DiceCollector {
   }
 
   /**
-   * Initialize the collector
+   * Initialize the collector (idempotent — safe to call on reconnection)
    */
   initialize() {
+    if (this._initialized) {
+      Logger.debug('Dice Collector already initialized, skipping hook registration')
+      this.loadSettings()
+      return
+    }
+
     this.systemAdapter = getSystemAdapter()
 
     // Load settings
@@ -31,6 +37,7 @@ export class DiceCollector {
     // System-specific hooks
     this.registerSystemHooks()
 
+    this._initialized = true
     Logger.info('Dice Collector initialized', { system: game.system.id })
   }
 

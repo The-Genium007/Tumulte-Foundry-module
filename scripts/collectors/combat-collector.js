@@ -12,9 +12,16 @@ export class CombatCollector {
   }
 
   /**
-   * Initialize the collector
+   * Initialize the collector (idempotent — safe to call on reconnection)
    */
   initialize() {
+    if (this._initialized) {
+      Logger.debug('Combat Collector already initialized, skipping hook registration')
+      // Still sync active combat on reconnection
+      this.syncActiveCombat()
+      return
+    }
+
     // Combat lifecycle hooks
     Hooks.on('createCombat', this.onCombatCreate.bind(this))
     Hooks.on('updateCombat', this.onCombatUpdate.bind(this))
@@ -30,6 +37,10 @@ export class CombatCollector {
     Hooks.on('deleteCombatant', this.onCombatantDelete.bind(this))
     Hooks.on('updateCombatant', this.onCombatantUpdate.bind(this))
 
+    // Scene change hook — re-sync combat when the active scene changes
+    Hooks.on('canvasReady', this.onSceneChange.bind(this))
+
+    this._initialized = true
     Logger.info('Combat Collector initialized')
 
     // Sync active combat if one exists (game is already ready when this is called)
@@ -65,6 +76,69 @@ export class CombatCollector {
       currentCombatant: combat.combatant ? this.extractCombatantData(combat.combatant) : null,
       timestamp: Date.now()
     })
+  }
+
+  /**
+   * Handle scene change (canvasReady) — re-sync or clear combat for the new scene.
+   *
+   * When the GM switches to a different scene:
+   * - If the new scene has an active combat → sync it (replaces Redis cache)
+   * - If the new scene has no combat → emit combat:end to clear Redis cache
+   *   and trigger monster effect cleanup
+   */
+  onSceneChange(canvas) {
+    const newSceneId = canvas.scene?.id
+    const combat = game.combat
+
+    Logger.info('Scene changed', {
+      sceneId: newSceneId,
+      sceneName: canvas.scene?.name,
+      hasCombat: !!combat?.active,
+      previousCombat: this.activeCombat,
+    })
+
+    if (combat?.active) {
+      // New scene has an active combat — sync it
+      if (this.activeCombat !== combat.id) {
+        // Different combat than before: cleanup old effects then sync new
+        if (this.activeCombat) {
+          if (typeof this.socket.cleanupMonsterEffects === 'function') {
+            this.socket.cleanupMonsterEffects().catch(err => {
+              Logger.error('Failed to cleanup monster effects on scene change', err)
+            })
+          }
+        }
+        this.activeCombat = combat.id
+        this.syncActiveCombat()
+      }
+      // Same combat (e.g. GM re-navigated to same scene) — just re-sync
+      else {
+        this.syncActiveCombat()
+      }
+    } else {
+      // No combat on new scene — clear the previous one
+      if (this.activeCombat) {
+        Logger.info('No combat on new scene, clearing previous combat', {
+          previousCombatId: this.activeCombat,
+        })
+
+        this.socket.emit('combat:end', {
+          worldId: game.world.id,
+          combatId: this.activeCombat,
+          finalRound: 0,
+          timestamp: Date.now()
+        })
+
+        // Cleanup monster effects from the previous scene
+        if (typeof this.socket.cleanupMonsterEffects === 'function') {
+          this.socket.cleanupMonsterEffects().catch(err => {
+            Logger.error('Failed to cleanup monster effects on scene change', err)
+          })
+        }
+
+        this.activeCombat = null
+      }
+    }
   }
 
   /**
@@ -169,6 +243,13 @@ export class CombatCollector {
 
     if (this.activeCombat === combat.id) {
       this.activeCombat = null
+    }
+
+    // Auto-cleanup monster effects when combat ends
+    if (typeof this.socket.cleanupMonsterEffects === 'function') {
+      this.socket.cleanupMonsterEffects().catch(err => {
+        Logger.error('Failed to auto-cleanup monster effects on combat end', err)
+      })
     }
   }
 

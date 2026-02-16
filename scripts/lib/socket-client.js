@@ -40,6 +40,9 @@ export class TumulteSocketClient extends EventTarget {
     // Heartbeat
     this.lastPong = null
 
+    // Item categories received from Tumulte backend (dynamic configuration)
+    this._itemCategories = null
+
     // Bind methods
     this.handleConnect = this.handleConnect.bind(this)
     this.handleDisconnect = this.handleDisconnect.bind(this)
@@ -121,6 +124,10 @@ export class TumulteSocketClient extends EventTarget {
         // Server events
         this.socket.on('connected', (data) => {
           Logger.info('Server acknowledged connection', data)
+          if (data.itemCategories) {
+            this._itemCategories = data.itemCategories
+            Logger.info('Item categories received from backend', { count: data.itemCategories.length })
+          }
           this.dispatchEvent(new CustomEvent('server-connected', { detail: data }))
         })
 
@@ -179,9 +186,30 @@ export class TumulteSocketClient extends EventTarget {
           this.handleCommandRemoveSpellEffect(data)
         })
 
+        // Monster effect commands (gamification - combat influence)
+        this.socket.on('command:apply_monster_effect', (data) => {
+          this.handleCommandApplyMonsterEffect(data)
+        })
+
+        this.socket.on('command:remove_monster_effect', (data) => {
+          this.handleCommandRemoveMonsterEffect(data)
+        })
+
         // Cleanup all Tumulte effects (maintenance tool)
         this.socket.on('command:cleanup_all_effects', (data) => {
           this.handleCommandCleanupAllEffects(data)
+        })
+
+        // Item category configuration sync from Tumulte
+        this.socket.on('command:sync_item_categories', (data) => {
+          if (data.itemCategories) {
+            this._itemCategories = data.itemCategories
+            Logger.info('Item categories updated from backend', { count: data.itemCategories.length })
+            // Re-render all open actor sheets to update visual highlighting
+            for (const actor of game.actors) {
+              actor.sheet?.render(false)
+            }
+          }
         })
 
         // On-demand sync request
@@ -539,6 +567,27 @@ export class TumulteSocketClient extends EventTarget {
     }
   }
 
+  /**
+   * Get the item categories received from Tumulte backend
+   * @returns {Array|null} Array of { itemType, category, subcategory, isTargetable } or null if not received
+   */
+  getItemCategories() {
+    return this._itemCategories
+  }
+
+  /**
+   * Get unique item types that are targetable by gamification actions
+   * @returns {Array<string>|null} Array of item type strings, or null if categories not available
+   */
+  getTargetableItemTypes() {
+    if (!this._itemCategories) return null
+    return [...new Set(
+      this._itemCategories
+        .filter(c => c.isTargetable)
+        .map(c => c.itemType)
+    )]
+  }
+
   // ========================================
   // COMMAND HANDLERS (Gamification)
   // ========================================
@@ -724,6 +773,35 @@ export class TumulteSocketClient extends EventTarget {
         throw new Error('Missing effect type')
       }
 
+      // Guard: reject if the spell already has an active Tumulte effect
+      const existingDisabled = spell.getFlag(MODULE_ID, 'disabled')
+      const existingEffect = spell.getFlag(MODULE_ID, 'spellEffect')
+
+      if (existingDisabled || existingEffect) {
+        const existingType = existingDisabled ? 'disabled' : existingEffect.type
+        Logger.warn('Spell already has an active Tumulte effect, rejecting command', {
+          spellId, spellName, existingType, newEffectType: effectType, requestId,
+        })
+
+        this.dispatchEvent(new CustomEvent('command-executed', {
+          detail: {
+            command: 'apply_spell_effect',
+            requestId,
+            success: false,
+            error: `spell_already_affected:${existingType}`,
+            spellId,
+          }
+        }))
+
+        // Whisper notification to GM only
+        await ChatMessage.create({
+          content: `<div class="tumulte-spell-effect"><em>${spellName}</em> a déjà un effet actif (${existingType}). Effet ignoré.</div>`,
+          speaker: { alias: 'Tumulte' },
+          whisper: game.users.filter(u => u.isGM).map(u => u.id),
+        })
+        return
+      }
+
       switch (effectType) {
         case 'disable':
           await this._applySpellDisable(actor, spell, effect, requestId)
@@ -762,8 +840,8 @@ export class TumulteSocketClient extends EventTarget {
     const expiresAt = disabledAt + durationMs
     const triggeredBy = effect.triggeredBy || 'le chat'
 
-    // Store original prepared state for recovery
-    const originalPrepared = spell.system?.preparation?.prepared ?? true
+    // Store original prepared state for recovery (dnd5e 5.1+ uses system.prepared, older uses system.preparation.prepared)
+    const originalPrepared = spell.system?.prepared ?? spell.system?.preparation?.prepared ?? true
 
     // Set disabled flag with all recovery info
     await spell.setFlag(MODULE_ID, 'disabled', {
@@ -775,10 +853,10 @@ export class TumulteSocketClient extends EventTarget {
       triggeredBy,
     })
 
-    // System-specific: mark spell as unprepared
+    // System-specific: mark spell as unprepared (dnd5e 5.1+ uses system.prepared)
     const systemId = game.system.id
     if (systemId === 'dnd5e') {
-      await spell.update({ 'system.preparation.prepared': false })
+      await spell.update(this._getDnd5ePreparedUpdate(false))
     }
 
     // Re-render the actor sheet so the visual highlighting hook fires
@@ -906,6 +984,20 @@ export class TumulteSocketClient extends EventTarget {
   }
 
   /**
+   * Build the correct update object for dnd5e prepared state.
+   * dnd5e 5.1+ uses 'system.prepared' directly, older versions use 'system.preparation.prepared'.
+   */
+  _getDnd5ePreparedUpdate(value) {
+    const dnd5eVersion = game.system.version || '0'
+    const majorMinor = dnd5eVersion.split('.').map(Number)
+    // dnd5e 5.1+ deprecated preparation.prepared in favor of system.prepared
+    if (majorMinor[0] > 5 || (majorMinor[0] === 5 && majorMinor[1] >= 1)) {
+      return { 'system.prepared': value }
+    }
+    return { 'system.preparation.prepared': value }
+  }
+
+  /**
    * Re-enable a spell that was disabled by Tumulte
    */
   async _reEnableSpell(actorId, spellId) {
@@ -931,7 +1023,7 @@ export class TumulteSocketClient extends EventTarget {
       // Restore original prepared state (D&D 5e)
       const systemId = game.system.id
       if (systemId === 'dnd5e' && disabledFlag.originalPrepared !== undefined) {
-        await spell.update({ 'system.preparation.prepared': disabledFlag.originalPrepared })
+        await spell.update(this._getDnd5ePreparedUpdate(disabledFlag.originalPrepared))
       }
 
       // Remove the disabled flag
@@ -1013,7 +1105,7 @@ export class TumulteSocketClient extends EventTarget {
 
         // Restore prepared state
         if (game.system.id === 'dnd5e' && disabledFlag.originalPrepared !== undefined) {
-          await spell.update({ 'system.preparation.prepared': disabledFlag.originalPrepared })
+          await spell.update(this._getDnd5ePreparedUpdate(disabledFlag.originalPrepared))
         }
 
         await spell.unsetFlag(MODULE_ID, 'disabled')
@@ -1047,7 +1139,7 @@ export class TumulteSocketClient extends EventTarget {
    */
   async handleCommandCleanupAllEffects(data) {
     const { requestId, cleanChat = false } = data
-    const results = { disabledRestored: 0, effectsRemoved: 0, timersCleared: 0, messagesDeleted: 0 }
+    const results = { disabledRestored: 0, effectsRemoved: 0, monsterEffectsRemoved: 0, timersCleared: 0, messagesDeleted: 0 }
 
     Logger.info('Received cleanup_all_effects command', { requestId, cleanChat })
 
@@ -1071,7 +1163,7 @@ export class TumulteSocketClient extends EventTarget {
           if (disabledFlag) {
             // Restore D&D 5e prepared state
             if (game.system.id === 'dnd5e' && disabledFlag.originalPrepared !== undefined) {
-              await item.update({ 'system.preparation.prepared': disabledFlag.originalPrepared })
+              await item.update(this._getDnd5ePreparedUpdate(disabledFlag.originalPrepared))
             }
             await item.unsetFlag(MODULE_ID, 'disabled')
             results.disabledRestored++
@@ -1085,6 +1177,14 @@ export class TumulteSocketClient extends EventTarget {
             results.effectsRemoved++
             actorModified = true
           }
+        }
+
+        // 2c. Remove monster effects (actor-level flags)
+        const monsterFlag = actor.getFlag(MODULE_ID, 'monsterEffect')
+        if (monsterFlag) {
+          await this._removeMonsterEffect(actor)
+          results.monsterEffectsRemoved++
+          actorModified = true
         }
 
         // Re-render actor sheet if any flags were removed
@@ -1103,7 +1203,7 @@ export class TumulteSocketClient extends EventTarget {
       }
 
       // 4. Post summary chat message
-      const total = results.disabledRestored + results.effectsRemoved + results.timersCleared
+      const total = results.disabledRestored + results.effectsRemoved + results.monsterEffectsRemoved + results.timersCleared
       if (total > 0 || cleanChat) {
         await ChatMessage.create({
           content: `
@@ -1113,7 +1213,8 @@ export class TumulteSocketClient extends EventTarget {
                   <strong>Nettoyage Tumulte effectué</strong>
                   <br/><small>
                     Sorts réactivés : ${results.disabledRestored},
-                    Effets supprimés : ${results.effectsRemoved},
+                    Effets sorts supprimés : ${results.effectsRemoved},
+                    Effets monstres supprimés : ${results.monsterEffectsRemoved},
                     Timers annulés : ${results.timersCleared}
                     ${cleanChat ? `, Messages supprimés : ${results.messagesDeleted}` : ''}
                   </small>
@@ -1137,6 +1238,291 @@ export class TumulteSocketClient extends EventTarget {
         detail: { command: 'cleanup_all_effects', requestId, success: false, error: error.message }
       }))
     }
+  }
+
+  // ========================================
+  // MONSTER EFFECT COMMANDS (Gamification - Combat Influence)
+  // ========================================
+
+  /**
+   * Handle apply_monster_effect command from Tumulte
+   * Applies a buff or debuff to a hostile monster's token/actor
+   */
+  async handleCommandApplyMonsterEffect(data) {
+    const { actorId, monsterName, monsterImg, effect, requestId } = data
+
+    Logger.info('Received apply_monster_effect command', {
+      actorId, monsterName, effectType: effect?.type, requestId
+    })
+
+    try {
+      const actor = game.actors.get(actorId)
+      if (!actor) {
+        throw new Error(`Actor not found: ${actorId}`)
+      }
+
+      const effectType = effect?.type
+      if (!effectType || !['buff', 'debuff'].includes(effectType)) {
+        throw new Error(`Invalid monster effect type: ${effectType}`)
+      }
+
+      // Find the token on the active scene
+      const token = canvas.tokens?.placeables?.find(t => t.actor?.id === actorId)
+
+      if (effectType === 'buff') {
+        await this._applyMonsterBuff(actor, token, effect, requestId)
+      } else {
+        await this._applyMonsterDebuff(actor, token, effect, requestId)
+      }
+
+      // Send Foundry chat message
+      const img = monsterImg || actor.img || ''
+      const triggeredBy = effect.triggeredBy || 'le chat'
+      const cssClass = effectType === 'buff' ? 'tumulte-monster-buff' : 'tumulte-monster-debuff'
+      const effectLabel = effectType === 'buff'
+        ? `<em>renforcé</em> (+${effect.acBonus ?? 2} CA, +${effect.tempHp ?? 10} PV temp)`
+        : `<em>affaibli</em> (-${effect.acPenalty ?? 2} CA, -${effect.maxHpReduction ?? 10} PV max)`
+
+      await ChatMessage.create({
+        content: `
+          <div class="tumulte-monster-effect ${cssClass}">
+            <div class="tumulte-monster-effect-header">
+              ${img ? `<img src="${img}" width="36" height="36"/>` : ''}
+              <div>
+                <strong>${monsterName}</strong> a été ${effectLabel} !
+                <br/><small>Déclenché par <strong>${triggeredBy}</strong></small>
+              </div>
+            </div>
+          </div>
+        `,
+        speaker: { alias: 'Tumulte' },
+      })
+
+      Logger.info('Monster effect applied successfully', { requestId, monsterName, effectType })
+      this.dispatchEvent(new CustomEvent('command-executed', {
+        detail: { command: 'apply_monster_effect', requestId, success: true }
+      }))
+
+    } catch (error) {
+      Logger.error('Failed to execute apply_monster_effect command', error)
+      this.dispatchEvent(new CustomEvent('command-executed', {
+        detail: { command: 'apply_monster_effect', requestId, success: false, error: error.message }
+      }))
+    }
+  }
+
+  /**
+   * Apply monster buff: +AC bonus and temporary HP
+   */
+  async _applyMonsterBuff(actor, token, effect, requestId) {
+    const acBonus = effect.acBonus ?? 2
+    const tempHp = effect.tempHp ?? 10
+    const highlightColor = effect.highlightColor || '#10B981'
+    const triggeredBy = effect.triggeredBy || 'le chat'
+
+    // Store original values and effect info as actor flag
+    const currentTempHp = actor.system?.attributes?.hp?.temp ?? 0
+    const originalAc = actor.system?.attributes?.ac?.value ?? 10
+
+    await actor.setFlag(MODULE_ID, 'monsterEffect', {
+      type: 'buff',
+      acBonus,
+      tempHp,
+      originalAc,
+      highlightColor,
+      requestId,
+      triggeredBy,
+      appliedAt: Date.now(),
+    })
+
+    // Apply temporary HP (additive)
+    await actor.update({
+      'system.attributes.hp.temp': currentTempHp + tempHp,
+    })
+
+    // Apply token halo flag for visual rendering
+    if (token) {
+      await token.document.setFlag(MODULE_ID, 'monsterHalo', {
+        enabled: true,
+        color: highlightColor,
+        type: 'buff',
+      })
+      // Force token refresh to trigger the refreshToken hook (renders halo)
+      token.refresh()
+    }
+
+    Logger.info('Monster buffed', {
+      monsterName: actor.name,
+      acBonus,
+      tempHp,
+      originalAc,
+    })
+  }
+
+  /**
+   * Apply monster debuff: -AC penalty and max HP reduction
+   */
+  async _applyMonsterDebuff(actor, token, effect, requestId) {
+    const acPenalty = effect.acPenalty ?? 2
+    const maxHpReduction = effect.maxHpReduction ?? 10
+    const highlightColor = effect.highlightColor || '#EF4444'
+    const triggeredBy = effect.triggeredBy || 'le chat'
+
+    // Store original values for restoration
+    const originalMaxHp = actor.system?.attributes?.hp?.max ?? 10
+    const originalAc = actor.system?.attributes?.ac?.value ?? 10
+
+    await actor.setFlag(MODULE_ID, 'monsterEffect', {
+      type: 'debuff',
+      acPenalty,
+      maxHpReduction,
+      originalMaxHp,
+      originalAc,
+      highlightColor,
+      requestId,
+      triggeredBy,
+      appliedAt: Date.now(),
+    })
+
+    // Reduce max HP (clamp current HP if needed)
+    const currentHp = actor.system?.attributes?.hp?.value ?? originalMaxHp
+    const newMaxHp = Math.max(1, originalMaxHp - maxHpReduction)
+    const updates = {
+      'system.attributes.hp.max': newMaxHp,
+    }
+    if (currentHp > newMaxHp) {
+      updates['system.attributes.hp.value'] = newMaxHp
+    }
+    await actor.update(updates)
+
+    // Apply token halo flag for visual rendering
+    if (token) {
+      await token.document.setFlag(MODULE_ID, 'monsterHalo', {
+        enabled: true,
+        color: highlightColor,
+        type: 'debuff',
+      })
+      // Force token refresh to trigger the refreshToken hook (renders halo)
+      token.refresh()
+    }
+
+    Logger.info('Monster debuffed', {
+      monsterName: actor.name,
+      acPenalty,
+      maxHpReduction,
+      originalMaxHp,
+      newMaxHp,
+    })
+  }
+
+  /**
+   * Handle remove_monster_effect command (GM manual cleanup)
+   * Restores original stats and removes visual halo
+   */
+  async handleCommandRemoveMonsterEffect(data) {
+    const { actorId, requestId } = data
+
+    Logger.info('Received remove_monster_effect command', { actorId, requestId })
+
+    try {
+      const actor = game.actors.get(actorId)
+      if (!actor) {
+        throw new Error(`Actor not found: ${actorId}`)
+      }
+
+      await this._removeMonsterEffect(actor)
+
+      Logger.info('Monster effect removed manually', { requestId, monsterName: actor.name })
+      this.dispatchEvent(new CustomEvent('command-executed', {
+        detail: { command: 'remove_monster_effect', requestId, success: true }
+      }))
+
+    } catch (error) {
+      Logger.error('Failed to execute remove_monster_effect command', error)
+      this.dispatchEvent(new CustomEvent('command-executed', {
+        detail: { command: 'remove_monster_effect', requestId, success: false, error: error.message }
+      }))
+    }
+  }
+
+  /**
+   * Remove a monster effect from an actor, restoring original values
+   */
+  async _removeMonsterEffect(actor) {
+    const effectFlag = actor.getFlag(MODULE_ID, 'monsterEffect')
+    if (!effectFlag) return false
+
+    if (effectFlag.type === 'debuff' && effectFlag.originalMaxHp) {
+      // Restore original max HP
+      const currentHp = actor.system?.attributes?.hp?.value ?? 0
+      const updates = {
+        'system.attributes.hp.max': effectFlag.originalMaxHp,
+      }
+      // Restore current HP proportionally if it was clamped
+      if (currentHp <= actor.system?.attributes?.hp?.max) {
+        const ratio = currentHp / (actor.system?.attributes?.hp?.max || 1)
+        updates['system.attributes.hp.value'] = Math.round(ratio * effectFlag.originalMaxHp)
+      }
+      await actor.update(updates)
+    }
+
+    // Remove actor flag
+    await actor.unsetFlag(MODULE_ID, 'monsterEffect')
+
+    // Remove token halo
+    const token = canvas.tokens?.placeables?.find(t => t.actor?.id === actor.id)
+    if (token) {
+      const haloFlag = token.document.getFlag(MODULE_ID, 'monsterHalo')
+      if (haloFlag) {
+        await token.document.unsetFlag(MODULE_ID, 'monsterHalo')
+        // Force token refresh to remove the glow filter visually
+        token.refresh()
+      }
+    }
+
+    return true
+  }
+
+  /**
+   * Auto-cleanup all monster effects (called on combat end)
+   * Iterates over all actors and removes any active monster effects
+   */
+  async cleanupMonsterEffects() {
+    let cleaned = 0
+
+    for (const actor of game.actors) {
+      const effectFlag = actor.getFlag(MODULE_ID, 'monsterEffect')
+      if (effectFlag) {
+        try {
+          await this._removeMonsterEffect(actor)
+          cleaned++
+        } catch (error) {
+          Logger.error('Failed to clean monster effect on combat end', {
+            actorName: actor.name,
+            error: error.message
+          })
+        }
+      }
+    }
+
+    if (cleaned > 0) {
+      Logger.info('Monster effects cleaned on combat end', { cleaned })
+      await ChatMessage.create({
+        content: `
+          <div class="tumulte-monster-effect tumulte-monster-cleanup">
+            <div class="tumulte-monster-effect-header">
+              <div>
+                <strong>Combat terminé</strong> — ${cleaned} effet(s) monstre nettoyé(s)
+                <br/><small>Les stats des monstres ont été restaurées</small>
+              </div>
+            </div>
+          </div>
+        `,
+        speaker: { alias: 'Tumulte' },
+      })
+    }
+
+    return cleaned
   }
 
   /**

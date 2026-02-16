@@ -251,6 +251,53 @@ class GenericAdapter {
   extractInventory(actor) {
     return []
   }
+
+  /**
+   * Extract spells / magical abilities from the actor.
+   * Returns a flat array usable by the gamification spell system.
+   *
+   * @param {Actor} actor - Foundry VTT actor document
+   * @returns {Array<{id: string, name: string, img: string, type: string, level: number|null, school: string|null, prepared: boolean|null, uses: {value: number|null, max: number|null}|null}>}
+   */
+  extractSpells(actor) {
+    if (!actor?.items) return []
+
+    // Generic fallback: look for items typed 'spell'
+    return actor.items
+      .filter(item => item.type === 'spell')
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: 'spell',
+        level: item.system?.level ?? null,
+        school: null,
+        prepared: null,
+        uses: null,
+      }))
+  }
+
+  /**
+   * Extract features / abilities / talents from the actor.
+   *
+   * @param {Actor} actor - Foundry VTT actor document
+   * @returns {Array<{id: string, name: string, img: string, type: string, subtype: string|null, uses: {value: number|null, max: number|null, per: string|null}|null}>}
+   */
+  extractFeatures(actor) {
+    if (!actor?.items) return []
+
+    // Generic fallback: look for items typed 'feat'
+    return actor.items
+      .filter(item => item.type === 'feat')
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: 'feat',
+        subtype: null,
+        uses: null,
+      }))
+  }
 }
 
 /**
@@ -357,8 +404,9 @@ class Dnd5eAdapter extends GenericAdapter {
   extractInventory(actor) {
     if (!actor?.items) return []
 
+    const inventoryTypes = ['weapon', 'equipment', 'consumable', 'tool', 'loot', 'container', 'backpack']
     return actor.items
-      .filter(item => ['weapon', 'equipment', 'consumable', 'tool'].includes(item.type))
+      .filter(item => inventoryTypes.includes(item.type))
       .map(item => ({
         id: item.id,
         name: item.name,
@@ -366,6 +414,45 @@ class Dnd5eAdapter extends GenericAdapter {
         quantity: item.system?.quantity || 1,
         equipped: item.system?.equipped || false,
         img: item.img
+      }))
+  }
+
+  extractSpells(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => item.type === 'spell')
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: 'spell',
+        level: item.system?.level ?? null,
+        school: item.system?.school || null,
+        prepared: item.system?.preparation?.prepared ?? null,
+        uses: item.system?.uses ? {
+          value: item.system.uses.value ?? null,
+          max: item.system.uses.max ?? null,
+        } : null,
+      }))
+  }
+
+  extractFeatures(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => item.type === 'feat')
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: 'feat',
+        subtype: item.system?.type?.value || null,
+        uses: item.system?.uses?.max ? {
+          value: item.system.uses.value ?? null,
+          max: item.system.uses.max ?? null,
+          per: item.system.uses.per || null,
+        } : null,
       }))
   }
 }
@@ -439,6 +526,45 @@ class Pf2eAdapter extends GenericAdapter {
       ancestry: system.details?.ancestry?.name || '',
       class: system.details?.class?.name || ''
     }
+  }
+
+  extractSpells(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => item.type === 'spell')
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: 'spell',
+        level: item.system?.level?.value ?? item.system?.level ?? null,
+        school: item.system?.traditions?.value?.[0] || null,
+        prepared: item.system?.location?.signature ?? null,
+        uses: item.system?.location?.uses ? {
+          value: item.system.location.uses.value ?? null,
+          max: item.system.location.uses.max ?? null,
+        } : null,
+      }))
+  }
+
+  extractFeatures(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['feat', 'action'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        subtype: item.system?.category || item.system?.actionType?.value || null,
+        uses: item.system?.frequency ? {
+          value: item.system.frequency.value ?? null,
+          max: item.system.frequency.max ?? null,
+          per: item.system.frequency.per || null,
+        } : null,
+      }))
   }
 }
 
@@ -551,6 +677,41 @@ class CoC7Adapter extends GenericAdapter {
     }
     return chars
   }
+
+  extractSpells(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => item.type === 'spell')
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: 'spell',
+        level: null,
+        school: null,
+        prepared: null,
+        uses: item.system?.uses ? {
+          value: item.system.uses.value ?? null,
+          max: item.system.uses.max ?? null,
+        } : null,
+      }))
+  }
+
+  extractFeatures(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['skill', 'talent', 'occupation'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        subtype: null,
+        uses: null,
+      }))
+  }
 }
 
 /**
@@ -646,6 +807,43 @@ class Wfrp4eAdapter extends GenericAdapter {
       }
     }
     return chars
+  }
+
+  extractSpells(actor) {
+    if (!actor?.items) return []
+
+    // WFRP4e has both 'spell' and 'prayer' item types
+    return actor.items
+      .filter(item => ['spell', 'prayer'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        level: item.system?.cn?.value ?? null,
+        school: item.system?.lore?.value || null,
+        prepared: item.system?.memorized?.value ?? null,
+        uses: null,
+      }))
+  }
+
+  extractFeatures(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['talent', 'trait'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        subtype: null,
+        uses: item.system?.tests?.value ? {
+          value: null,
+          max: null,
+          per: null,
+        } : null,
+      }))
   }
 }
 
@@ -774,6 +972,42 @@ class SwadeAdapter extends GenericAdapter {
     }
     return attrs
   }
+
+  extractSpells(actor) {
+    if (!actor?.items) return []
+
+    // SWADE uses 'power' item type for magical abilities
+    return actor.items
+      .filter(item => item.type === 'power')
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: 'power',
+        level: item.system?.rank ?? null,
+        school: item.system?.arcane || null,
+        prepared: null,
+        uses: item.system?.pp ? {
+          value: item.system.pp.value ?? null,
+          max: item.system.pp.max ?? null,
+        } : null,
+      }))
+  }
+
+  extractFeatures(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['edge', 'hindrance', 'ability'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        subtype: item.system?.isNegative ? 'hindrance' : null,
+        uses: null,
+      }))
+  }
 }
 
 /**
@@ -878,6 +1112,39 @@ class CyberpunkRedAdapter extends GenericAdapter {
       }
     }
     return stats
+  }
+
+  // Cyberpunk RED: no traditional spells, but Netrunner programs serve a similar role
+  extractSpells(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => item.type === 'program')
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: 'program',
+        level: item.system?.class || null,
+        school: null,
+        prepared: item.system?.equipped ?? null,
+        uses: null,
+      }))
+  }
+
+  extractFeatures(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['cyberware', 'talent', 'role'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        subtype: null,
+        uses: null,
+      }))
   }
 }
 
@@ -1007,6 +1274,23 @@ class AlienRpgAdapter extends GenericAdapter {
     }
     return attrs
   }
+
+  // Alien RPG has no spells — extractSpells returns [] via GenericAdapter
+
+  extractFeatures(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['talent', 'agenda'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        subtype: null,
+        uses: null,
+      }))
+  }
 }
 
 /**
@@ -1113,6 +1397,38 @@ class ForbiddenLandsAdapter extends GenericAdapter {
     }
     return attrs
   }
+
+  extractSpells(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => item.type === 'spell')
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: 'spell',
+        level: null,
+        school: null,
+        prepared: null,
+        uses: null,
+      }))
+  }
+
+  extractFeatures(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['talent', 'criticalInjury'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        subtype: null,
+        uses: null,
+      }))
+  }
 }
 
 /**
@@ -1199,6 +1515,39 @@ class VaesenAdapter extends GenericAdapter {
       }
     }
     return attrs
+  }
+
+  // Vaesen: rituals/spells are rare but exist
+  extractSpells(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['spell', 'ritual'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        level: null,
+        school: null,
+        prepared: null,
+        uses: null,
+      }))
+  }
+
+  extractFeatures(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['talent', 'condition'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        subtype: null,
+        uses: null,
+      }))
   }
 }
 
@@ -1296,6 +1645,39 @@ class BladesInTheDarkAdapter extends GenericAdapter {
       stress: system.stress?.value || 0,
       trauma: system.trauma?.value || 0
     }
+  }
+
+  // Blades in the Dark: no traditional spells, but ghost/arcane abilities exist
+  extractSpells(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['ghost', 'ritual'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        level: null,
+        school: null,
+        prepared: null,
+        uses: null,
+      }))
+  }
+
+  extractFeatures(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['ability', 'crew_ability', 'item'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        subtype: null,
+        uses: null,
+      }))
   }
 }
 
@@ -1466,6 +1848,42 @@ class Vtm5eAdapter extends GenericAdapter {
       willpower: system.willpower?.value || 0,
     }
   }
+
+  // VtM5e: Disciplines are the "spells" of Vampire
+  extractSpells(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['discipline', 'power'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        level: item.system?.level ?? null,
+        school: item.system?.discipline || null,
+        prepared: null,
+        uses: item.system?.cost ? {
+          value: null,
+          max: item.system.cost ?? null,
+        } : null,
+      }))
+  }
+
+  extractFeatures(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['merit', 'flaw', 'background'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        subtype: null,
+        uses: null,
+      }))
+  }
 }
 
 /**
@@ -1562,6 +1980,39 @@ class ShadowrunAdapter extends GenericAdapter {
       essence: system.essence?.value || 6,
       edge: system.edge?.value || 0,
     }
+  }
+
+  extractSpells(actor) {
+    if (!actor?.items) return []
+
+    // Shadowrun: spells, complex forms, adept powers
+    return actor.items
+      .filter(item => ['spell', 'complex_form', 'adept_power'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        level: null,
+        school: item.system?.category || item.system?.type || null,
+        prepared: null,
+        uses: null,
+      }))
+  }
+
+  extractFeatures(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['quality', 'echo', 'metamagic'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        subtype: item.system?.type || null,
+        uses: null,
+      }))
   }
 }
 
@@ -1689,6 +2140,43 @@ class StarWarsFFGAdapter extends GenericAdapter {
       },
     }
   }
+
+  // Star Wars FFG: Force powers are the "spells"
+  extractSpells(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['forcepower', 'power'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        level: null,
+        school: 'force',
+        prepared: null,
+        uses: null,
+      }))
+  }
+
+  extractFeatures(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['talent', 'specialization', 'signatureability'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        subtype: null,
+        uses: item.system?.ranks ? {
+          value: item.system.ranks.current ?? null,
+          max: item.system.ranks.max ?? null,
+          per: null,
+        } : null,
+      }))
+  }
 }
 
 /**
@@ -1760,6 +2248,39 @@ class FateAdapter extends GenericAdapter {
       refresh: system.fatePoints?.refresh || 0,
       current: system.fatePoints?.current || 0,
     }
+  }
+
+  // FATE: extras/powers can act as "spells" in FATE-based settings
+  extractSpells(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['power', 'extra'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        level: null,
+        school: null,
+        prepared: null,
+        uses: null,
+      }))
+  }
+
+  extractFeatures(actor) {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['stunt', 'aspect'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        subtype: null,
+        uses: null,
+      }))
   }
 }
 
