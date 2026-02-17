@@ -760,11 +760,20 @@ export class TumulteSocketClient extends EventTarget {
     try {
       const actor = game.actors.get(actorId)
       if (!actor) {
+        Logger.error(`Actor not found in game.actors: "${actorId}"`, {
+          availableActors: game.actors.map(a => ({ id: a.id, name: a.name })),
+        })
         throw new Error(`Actor not found: ${actorId}`)
       }
 
       const spell = actor.items.get(spellId)
       if (!spell) {
+        Logger.error(`Spell not found on actor "${actor.name}": "${spellId}"`, {
+          actorId,
+          availableSpells: actor.items
+            .filter(i => i.type === 'spell')
+            .map(i => ({ id: i.id, name: i.name, type: i.type })),
+        })
         throw new Error(`Spell not found: ${spellId} on actor ${actorId}`)
       }
 
@@ -773,33 +782,34 @@ export class TumulteSocketClient extends EventTarget {
         throw new Error('Missing effect type')
       }
 
-      // Guard: reject if the spell already has an active Tumulte effect
+      // Clear any existing Tumulte effect before applying the new one
       const existingDisabled = spell.getFlag(MODULE_ID, 'disabled')
       const existingEffect = spell.getFlag(MODULE_ID, 'spellEffect')
 
       if (existingDisabled || existingEffect) {
         const existingType = existingDisabled ? 'disabled' : existingEffect.type
-        Logger.warn('Spell already has an active Tumulte effect, rejecting command', {
+        Logger.warn('Spell already has an active Tumulte effect — replacing with new effect', {
           spellId, spellName, existingType, newEffectType: effectType, requestId,
         })
 
-        this.dispatchEvent(new CustomEvent('command-executed', {
-          detail: {
-            command: 'apply_spell_effect',
-            requestId,
-            success: false,
-            error: `spell_already_affected:${existingType}`,
-            spellId,
+        // Clear existing flags before applying the new effect
+        if (existingDisabled) {
+          // Cancel any active re-enable timer for this spell
+          const timerKey = `${actor.id}:${spell.id}`
+          const existingTimer = this._spellDisableTimers?.get(timerKey)
+          if (existingTimer) {
+            clearTimeout(existingTimer)
+            this._spellDisableTimers.delete(timerKey)
           }
-        }))
-
-        // Whisper notification to GM only
-        await ChatMessage.create({
-          content: `<div class="tumulte-spell-effect"><em>${spellName}</em> a déjà un effet actif (${existingType}). Effet ignoré.</div>`,
-          speaker: { alias: 'Tumulte' },
-          whisper: game.users.filter(u => u.isGM).map(u => u.id),
-        })
-        return
+          // Restore prepared state if D&D 5e
+          if (game.system.id === 'dnd5e' && existingDisabled.originalPrepared !== undefined) {
+            await spell.update(this._getDnd5ePreparedUpdate(existingDisabled.originalPrepared))
+          }
+          await spell.unsetFlag(MODULE_ID, 'disabled')
+        }
+        if (existingEffect) {
+          await spell.unsetFlag(MODULE_ID, 'spellEffect')
+        }
       }
 
       switch (effectType) {
@@ -823,6 +833,7 @@ export class TumulteSocketClient extends EventTarget {
 
     } catch (error) {
       Logger.error('Failed to execute apply_spell_effect command', error)
+      Logger.notify(`Erreur spell effect: ${error.message}`, 'error')
       this.dispatchEvent(new CustomEvent('command-executed', {
         detail: { command: 'apply_spell_effect', requestId, success: false, error: error.message }
       }))
