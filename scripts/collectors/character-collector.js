@@ -80,8 +80,8 @@ export class CharacterCollector {
     this.periodicSyncInterval = setInterval(() => {
       if (!this.socket?.connected) return
 
-      Logger.debug('Periodic full-sync triggered')
-      this.syncAllCharacters(true)
+      Logger.debug('Periodic sync triggered')
+      this.syncAllCharacters(false)
     }, this.periodicSyncDelay)
 
     Logger.info('Periodic sync started', { intervalMs: this.periodicSyncDelay })
