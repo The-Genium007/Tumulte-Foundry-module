@@ -1235,3 +1235,209 @@
 .dark-theme .tumulte-monster-cleanup small {
   color: rgba(255, 255, 255, 0.5);
 }
+
+/* ==================================
+   Monster Effect Banner on Actor Sheets
+   ================================== */
+
+.tumulte-monster-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  margin: 0 8px 8px;
+  border-radius: var(--tumulte-radius);
+  font-size: 13px;
+  border-left: 4px solid;
+  animation: tumulte-banner-slide-in 0.3s ease;
+}
+
+@keyframes tumulte-banner-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tumulte-monster-banner > i {
+  font-size: 16px;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.tumulte-monster-banner-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tumulte-monster-banner-content strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tumulte-monster-banner-content small {
+  font-weight: 400;
+  opacity: 0.75;
+}
+
+/* Buff variant (green) */
+.tumulte-monster-banner-buff {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.05));
+  border-left-color: #10B981;
+  color: #065f46;
+}
+
+.tumulte-monster-banner-buff > i {
+  color: #10B981;
+}
+
+/* Debuff variant (red) */
+.tumulte-monster-banner-debuff {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.05));
+  border-left-color: #EF4444;
+  color: #991b1b;
+}
+
+.tumulte-monster-banner-debuff > i {
+  color: #EF4444;
+}
+
+/* Dark theme overrides for monster banner */
+.dark-theme .tumulte-monster-banner-buff {
+  color: #6ee7b7;
+}
+
+.dark-theme .tumulte-monster-banner-buff small {
+  color: rgba(110, 231, 183, 0.7);
+}
+
+.dark-theme .tumulte-monster-banner-debuff {
+  color: #fca5a5;
+}
+
+.dark-theme .tumulte-monster-banner-debuff small {
+  color: rgba(252, 165, 165, 0.7);
+}
+
+/* ==================================
+   Stat Change Pills (inside banner)
+   ================================== */
+
+.tumulte-monster-banner-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0;
+}
+
+.tumulte-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  white-space: nowrap;
+}
+
+.tumulte-stat-pill-buff {
+  background: rgba(16, 185, 129, 0.2);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.tumulte-stat-pill-debuff {
+  background: rgba(239, 68, 68, 0.2);
+  color: #dc2626;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.dark-theme .tumulte-stat-pill-buff {
+  color: #6ee7b7;
+  border-color: rgba(110, 231, 183, 0.4);
+}
+
+.dark-theme .tumulte-stat-pill-debuff {
+  color: #fca5a5;
+  border-color: rgba(252, 165, 165, 0.4);
+}
+
+/* ==================================
+   Stat Value Modification Highlights
+   ================================== */
+
+.tumulte-stat-modified {
+  position: relative;
+  font-weight: 600 !important;
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+
+.tumulte-stat-buffed {
+  background: rgba(16, 185, 129, 0.15) !important;
+  color: #059669 !important;
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.3);
+  animation: tumulte-pulse-stat-buff 2.5s ease-in-out infinite;
+}
+
+.tumulte-stat-debuffed {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #dc2626 !important;
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.3);
+  animation: tumulte-pulse-stat-debuff 2.5s ease-in-out infinite;
+}
+
+/* Original value shown as strikethrough annotation */
+.tumulte-original-value {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 0.8em;
+  font-weight: 400;
+  text-decoration: line-through;
+  opacity: 0.6;
+  vertical-align: baseline;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+}
+
+.tumulte-stat-buffed .tumulte-original-value {
+  color: #065f46;
+}
+
+.tumulte-stat-debuffed .tumulte-original-value {
+  color: #991b1b;
+}
+
+/* Pulse animations for stat values */
+@keyframes tumulte-pulse-stat-buff {
+  0%, 100% { box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.2); }
+  50% { box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.5), 0 0 6px rgba(16, 185, 129, 0.15); }
+}
+
+@keyframes tumulte-pulse-stat-debuff {
+  0%, 100% { box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.2); }
+  50% { box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.5), 0 0 6px rgba(239, 68, 68, 0.15); }
+}
+
+/* Dark theme overrides for stat highlights */
+.dark-theme .tumulte-stat-buffed {
+  color: #6ee7b7 !important;
+}
+
+.dark-theme .tumulte-stat-debuffed {
+  color: #fca5a5 !important;
+}
+
+.dark-theme .tumulte-stat-buffed .tumulte-original-value {
+  color: rgba(110, 231, 183, 0.6);
+}
+
+.dark-theme .tumulte-stat-debuffed .tumulte-original-value {
+  color: rgba(252, 165, 165, 0.6);
+}

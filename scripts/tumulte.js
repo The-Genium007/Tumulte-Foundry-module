@@ -425,6 +425,7 @@ class TumulteIntegration {
         return
       }
       this._highlightSpellEffectsOnSheet(actor, el)
+      this._highlightMonsterEffectOnSheet(actor, el)
     }
 
     // Unified handler for item sheet hooks
@@ -453,25 +454,40 @@ class TumulteIntegration {
     Logger.info('Spell effect visual hooks registered (AppV1 + AppV2 + fallbacks)')
 
     // Monster effect: token halo rendering
-    // Uses refreshToken hook to draw a colored glow around affected monster tokens
-    Hooks.on('refreshToken', (token) => {
-      this._renderMonsterHalo(token)
+    // Register multiple hooks for maximum cross-version compatibility (Foundry v11-v13).
+    // - refreshToken : fires on token visual refresh (v11+, most reliable)
+    // - drawToken    : fires when a token is first drawn on the canvas
+    // - updateToken  : fires when a token document is updated (e.g. flag change via setFlag)
+    const tokenHaloHandler = (token) => this._renderMonsterHalo(token)
+    Hooks.on('refreshToken', tokenHaloHandler)
+    Hooks.on('drawToken', tokenHaloHandler)
+    // updateToken passes (document, change, options, userId) — extract the token placeable
+    Hooks.on('updateToken', (tokenDoc) => {
+      const token = tokenDoc?.object
+      if (token) tokenHaloHandler(token)
     })
 
-    Logger.debug('Monster effect token halo hook registered')
+    Logger.debug('Monster effect token halo hooks registered (refreshToken + drawToken + updateToken)')
   }
 
   /**
    * Render a colored glow halo around a monster token affected by a Tumulte effect.
    * Reads the `monsterHalo` flag from the token document and applies a PIXI GlowFilter.
+   *
+   * Compatible with Foundry v11-v13: resolves the correct PIXI display object
+   * from token.mesh (v11), token.texture (v12 early), or falls back to the token itself.
    */
   _renderMonsterHalo(token) {
     const haloFlag = token.document?.getFlag(MODULE_ID, 'monsterHalo')
 
+    // Resolve the PIXI display object that accepts filters.
+    // Priority: token.mesh (v11+), then the token object itself (v12-v13 uses Token as container)
+    const displayObject = token.mesh || token
+
     // Remove existing Tumulte glow filter if no flag
     if (!haloFlag?.enabled) {
-      if (token.mesh?.filters) {
-        token.mesh.filters = token.mesh.filters.filter(f => !f._tumulteMonsterHalo)
+      if (displayObject?.filters) {
+        displayObject.filters = displayObject.filters.filter(f => !f._tumulteMonsterHalo)
       }
       return
     }
@@ -481,15 +497,15 @@ class TumulteIntegration {
     const colorInt = parseInt(colorHex.replace('#', ''), 16)
 
     // Check if we already have the filter applied
-    const existing = token.mesh?.filters?.find(f => f._tumulteMonsterHalo)
+    const existing = displayObject?.filters?.find(f => f._tumulteMonsterHalo)
     if (existing) {
       // Update color if it changed
       existing.color = colorInt
       return
     }
 
-    // Apply embedded TumulteGlowFilter to token mesh
-    if (token.mesh) {
+    // Apply embedded TumulteGlowFilter
+    if (displayObject) {
       try {
         const glow = new TumulteGlowFilter({
           distance: 10,
@@ -500,9 +516,9 @@ class TumulteIntegration {
         })
         glow._tumulteMonsterHalo = true
 
-        if (!token.mesh.filters) token.mesh.filters = []
-        token.mesh.filters.push(glow)
-        Logger.debug('Monster halo applied', { name: token.name, color: colorHex })
+        if (!displayObject.filters) displayObject.filters = []
+        displayObject.filters = [...displayObject.filters, glow]
+        Logger.debug('Monster halo applied', { name: token.name, color: colorHex, target: token.mesh ? 'mesh' : 'token' })
       } catch (err) {
         Logger.error('Failed to apply monster halo filter', err)
       }
@@ -652,6 +668,279 @@ class TumulteIntegration {
 
     if (matchCount > 0) {
       Logger.debug('Tumulte visual effects applied', { actor: actor.name, matchCount })
+    }
+  }
+
+  /**
+   * Show a banner + stat value highlights on an actor sheet when the actor
+   * has an active Tumulte monster effect (buff or debuff).
+   *
+   * 100 % system-agnostic: uses the monsterEffect flag on the actor and
+   * heuristic DOM scanning to find HP/AC elements.
+   *
+   * @param {Actor} actor - The Foundry actor
+   * @param {HTMLElement} htmlEl - Normalized HTML element from _resolveHtmlElement()
+   */
+  _highlightMonsterEffectOnSheet(actor, htmlEl) {
+    if (!actor) return
+
+    const effectFlag = actor.getFlag(MODULE_ID, 'monsterEffect')
+    if (!effectFlag) return
+
+    // Avoid duplicate banners on re-render
+    if (htmlEl.querySelector('.tumulte-monster-banner')) return
+
+    // ── Build the banner ──────────────────────────────────────────────
+    const isBuff = effectFlag.type === 'buff'
+    const banner = document.createElement('div')
+    banner.className = `tumulte-monster-banner ${isBuff ? 'tumulte-monster-banner-buff' : 'tumulte-monster-banner-debuff'}`
+
+    // Icon
+    const icon = document.createElement('i')
+    icon.className = isBuff ? 'fas fa-arrow-up' : 'fas fa-arrow-down'
+    banner.appendChild(icon)
+
+    // Text container
+    const textContainer = document.createElement('div')
+    textContainer.className = 'tumulte-monster-banner-content'
+
+    // Title
+    const title = document.createElement('strong')
+    title.textContent = isBuff ? 'Renforcé par Tumulte' : 'Affaibli par Tumulte'
+    textContainer.appendChild(title)
+
+    // Stat changes as pills
+    const pills = document.createElement('div')
+    pills.className = 'tumulte-monster-banner-pills'
+
+    if (isBuff) {
+      if (effectFlag.acBonus) {
+        const pill = this._createStatPill(`+${effectFlag.acBonus} CA`, 'buff')
+        pills.appendChild(pill)
+      }
+      if (effectFlag.tempHp) {
+        const pill = this._createStatPill(`+${effectFlag.tempHp} PV temp`, 'buff')
+        pills.appendChild(pill)
+      }
+    } else {
+      if (effectFlag.acPenalty) {
+        const pill = this._createStatPill(`-${effectFlag.acPenalty} CA`, 'debuff')
+        pills.appendChild(pill)
+      }
+      if (effectFlag.maxHpReduction) {
+        const pill = this._createStatPill(`-${effectFlag.maxHpReduction} PV max`, 'debuff')
+        pills.appendChild(pill)
+      }
+    }
+
+    if (pills.children.length > 0) {
+      textContainer.appendChild(pills)
+    }
+
+    // Attribution
+    if (effectFlag.triggeredBy) {
+      const attribution = document.createElement('small')
+      attribution.textContent = `Déclenché par ${effectFlag.triggeredBy}`
+      textContainer.appendChild(attribution)
+    }
+
+    banner.appendChild(textContainer)
+
+    // ── Insert banner into sheet ──────────────────────────────────────
+    const header = htmlEl.querySelector('.sheet-header')
+    if (header) {
+      header.insertAdjacentElement('afterend', banner)
+    } else {
+      const form = htmlEl.querySelector('form') || htmlEl.querySelector('.sheet-body')
+      if (form) form.insertAdjacentElement('afterbegin', banner)
+    }
+
+    // ── Highlight modified stat values in the sheet ───────────────────
+    this._highlightModifiedStats(htmlEl, effectFlag)
+
+    Logger.debug('Monster effect banner injected', { actor: actor.name, type: effectFlag.type })
+  }
+
+  /**
+   * Create a small pill element displaying a stat change (e.g. "+2 CA")
+   */
+  _createStatPill(text, type) {
+    const pill = document.createElement('span')
+    pill.className = `tumulte-stat-pill tumulte-stat-pill-${type}`
+    pill.textContent = text
+    return pill
+  }
+
+  /**
+   * Heuristic DOM scan to find and highlight modified HP/AC values on an actor sheet.
+   *
+   * Uses two strategies in order:
+   * 1. Foundry data-attributes ([data-property], [name], [data-path]) containing "ac" or "hp"
+   * 2. Proximity scan: elements whose numeric textContent matches the current AC, near a
+   *    label containing common stat names ("AC", "CA", "Armor", "HP", "PV", "Health", etc.)
+   *
+   * When a match is found, the element gets a colored background and the original value
+   * is shown as a strikethrough annotation next to the current value.
+   *
+   * @param {HTMLElement} htmlEl - The actor sheet HTML element
+   * @param {object} effectFlag - The monsterEffect flag data
+   */
+  _highlightModifiedStats(htmlEl, effectFlag) {
+    const isBuff = effectFlag.type === 'buff'
+
+    // ── AC highlighting ───────────────────────────────────────────────
+    if (effectFlag.originalAc != null && (effectFlag.acBonus || effectFlag.acPenalty)) {
+      const currentAc = isBuff
+        ? effectFlag.originalAc + (effectFlag.acBonus ?? 0)
+        : effectFlag.originalAc - (effectFlag.acPenalty ?? 0)
+
+      const acEl = this._findStatElement(htmlEl, currentAc, effectFlag.originalAc, [
+        // Strategy 1: data-attributes
+        '[data-property*="ac" i]', '[name*="ac" i]', '[data-path*="ac" i]',
+        '[data-property*="armor" i]', '[name*="armor" i]',
+        '[data-property*="toughness" i]', '[name*="toughness" i]',
+        '[data-property*="soak" i]', '[name*="soak" i]',
+        '[data-property*="sp" i]',
+      ], ['AC', 'CA', 'Armor', 'Armure', 'Defence', 'Défense', 'Toughness', 'Soak', 'SP'])
+
+      if (acEl) {
+        this._applyStatHighlight(acEl, effectFlag.originalAc, isBuff)
+      }
+    }
+
+    // ── HP highlighting ───────────────────────────────────────────────
+    // For buffs: temp HP was added — show the temp HP amount on the temp HP field
+    // For debuffs: max HP was reduced — show original max on the max HP field
+    if (isBuff && effectFlag.tempHp) {
+      // Try to find the temp HP element specifically
+      const tempHpEl = this._findStatElementByAttribute(htmlEl, [
+        '[data-property*="hp.temp" i]', '[name*="hp.temp" i]', '[data-path*="hp.temp" i]',
+        '[data-property*="temp" i][data-property*="hp" i]',
+      ])
+      if (tempHpEl) {
+        // For temp HP, only apply the colored highlight — don't show "0" as original value
+        if (!tempHpEl.classList.contains('tumulte-stat-modified')) {
+          tempHpEl.classList.add('tumulte-stat-modified', 'tumulte-stat-buffed')
+        }
+      }
+    } else if (!isBuff && effectFlag.maxHpReduction && effectFlag.originalMaxHp != null) {
+      const currentMaxHp = effectFlag.originalMaxHp - (effectFlag.maxHpReduction ?? 0)
+      const maxHpEl = this._findStatElement(htmlEl, currentMaxHp, effectFlag.originalMaxHp, [
+        '[data-property*="hp.max" i]', '[name*="hp.max" i]', '[data-path*="hp.max" i]',
+        '[data-property*="wounds.max" i]', '[name*="wounds.max" i]',
+        '[data-property*="health.max" i]', '[name*="health.max" i]',
+      ], ['HP Max', 'PV Max', 'Max HP', 'Max PV', 'Wounds Max', 'Health Max'])
+
+      if (maxHpEl) {
+        this._applyStatHighlight(maxHpEl, effectFlag.originalMaxHp, false)
+      }
+    }
+  }
+
+  /**
+   * Find a stat element using data-attribute selectors, then fallback to proximity scan.
+   *
+   * @param {HTMLElement} root - The sheet HTML root
+   * @param {number} currentValue - The current stat value displayed
+   * @param {number} originalValue - The original stat value before modification
+   * @param {string[]} attrSelectors - CSS selectors for data-attribute matching
+   * @param {string[]} labelKeywords - Keywords to look for near numeric elements
+   * @returns {HTMLElement|null}
+   */
+  _findStatElement(root, currentValue, originalValue, attrSelectors, labelKeywords) {
+    // Strategy 1: data-attribute selectors
+    const attrMatch = this._findStatElementByAttribute(root, attrSelectors)
+    if (attrMatch) return attrMatch
+
+    // Strategy 2: proximity scan — find elements containing the exact numeric value
+    // near a label with matching keywords
+    if (currentValue == null) return null
+
+    const valueStr = String(currentValue)
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, {
+      acceptNode: (node) => {
+        // Accept form elements (<input>, <select>) by their .value property
+        if (node.tagName === 'INPUT' || node.tagName === 'SELECT') {
+          return (node.value ?? '').trim() === valueStr
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_SKIP
+        }
+        // For other elements, only accept true leaf nodes (no child elements)
+        // to avoid matching containers whose concatenated textContent happens to match
+        if (node.childElementCount > 0) return NodeFilter.FILTER_SKIP
+        const text = (node.textContent ?? '').trim()
+        if (text === valueStr) return NodeFilter.FILTER_ACCEPT
+        return NodeFilter.FILTER_SKIP
+      }
+    })
+
+    const candidates = []
+    let node
+    while ((node = walker.nextNode())) {
+      // Avoid matching elements already highlighted by Tumulte
+      if (node.closest('.tumulte-monster-banner')) continue
+      if (node.classList?.contains('tumulte-stat-modified')) continue
+      candidates.push(node)
+    }
+
+    // Score candidates by proximity to a label keyword
+    const lcKeywords = labelKeywords.map(k => k.toLowerCase())
+    for (const candidate of candidates) {
+      // Check parent, grandparent, and sibling text for keyword match
+      const context = [
+        candidate.parentElement?.textContent,
+        candidate.parentElement?.parentElement?.textContent,
+        candidate.previousElementSibling?.textContent,
+        candidate.closest('[class*="attribute"], [class*="stat"], [class*="resource"]')?.textContent,
+      ].filter(Boolean).join(' ').toLowerCase()
+
+      if (lcKeywords.some(kw => context.includes(kw))) {
+        return candidate
+      }
+    }
+
+    return null
+  }
+
+  /**
+   * Find an element matching one of the given CSS attribute selectors.
+   * Returns the first input/element found, preferring <input> over plain text.
+   */
+  _findStatElementByAttribute(root, selectors) {
+    for (const selector of selectors) {
+      try {
+        const el = root.querySelector(selector)
+        if (el) return el
+      } catch {
+        // Invalid selector — skip
+      }
+    }
+    return null
+  }
+
+  /**
+   * Apply a visual highlight to a stat element: colored background + original value annotation.
+   *
+   * @param {HTMLElement} el - The element containing the stat value
+   * @param {number} originalValue - The original value before modification
+   * @param {boolean} isBuff - true for buff (green), false for debuff (red)
+   */
+  _applyStatHighlight(el, originalValue, isBuff) {
+    if (el.classList.contains('tumulte-stat-modified')) return // Already highlighted
+
+    el.classList.add('tumulte-stat-modified', isBuff ? 'tumulte-stat-buffed' : 'tumulte-stat-debuffed')
+
+    // Inject original value annotation next to the current value
+    const annotation = document.createElement('span')
+    annotation.className = 'tumulte-original-value'
+    annotation.textContent = String(originalValue)
+    annotation.title = `Valeur originale : ${originalValue}`
+
+    // For <input> elements, insert after; for text elements, append as sibling
+    if (el.tagName === 'INPUT' || el.tagName === 'SELECT') {
+      el.insertAdjacentElement('afterend', annotation)
+    } else {
+      el.appendChild(annotation)
     }
   }
 
