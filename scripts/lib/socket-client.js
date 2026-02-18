@@ -1490,14 +1490,16 @@ export class TumulteSocketClient extends EventTarget {
     }
     await actor.update(updates)
 
-    // Apply token halo flag for visual rendering
+    // Apply token halo flag for visual rendering.
+    // The updateToken hook may pick this up, but we also manually refresh via requestAnimationFrame
+    // to ensure the glow is applied even if the hook doesn't fire (e.g. off-canvas tokens).
     if (token) {
       await token.document.setFlag(MODULE_ID, 'monsterHalo', {
         enabled: true,
         color: highlightColor,
         type: 'buff',
       })
-      token.refresh()
+      requestAnimationFrame(() => token.refresh())
     }
 
     Logger.info('Monster buffed', {
@@ -1544,14 +1546,16 @@ export class TumulteSocketClient extends EventTarget {
     }
     await actor.update(updates)
 
-    // Apply token halo flag for visual rendering
+    // Apply token halo flag for visual rendering.
+    // The updateToken hook may pick this up, but we also manually refresh via requestAnimationFrame
+    // to ensure the glow is applied even if the hook doesn't fire (e.g. off-canvas tokens).
     if (token) {
       await token.document.setFlag(MODULE_ID, 'monsterHalo', {
         enabled: true,
         color: highlightColor,
         type: 'debuff',
       })
-      token.refresh()
+      requestAnimationFrame(() => token.refresh())
     }
 
     Logger.info('Monster debuffed', {
@@ -1626,7 +1630,7 @@ export class TumulteSocketClient extends EventTarget {
       const haloFlag = token.document.getFlag(MODULE_ID, 'monsterHalo')
       if (haloFlag) {
         await token.document.unsetFlag(MODULE_ID, 'monsterHalo')
-        token.refresh()
+        requestAnimationFrame(() => token.refresh())
       }
     }
 
