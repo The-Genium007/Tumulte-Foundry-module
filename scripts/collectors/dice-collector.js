@@ -17,9 +17,15 @@ export class DiceCollector {
   }
 
   /**
-   * Initialize the collector
+   * Initialize the collector (idempotent — safe to call on reconnection)
    */
   initialize() {
+    if (this._initialized) {
+      Logger.debug('Dice Collector already initialized, skipping hook registration')
+      this.loadSettings()
+      return
+    }
+
     this.systemAdapter = getSystemAdapter()
 
     // Load settings
@@ -31,6 +37,7 @@ export class DiceCollector {
     // System-specific hooks
     this.registerSystemHooks()
 
+    this._initialized = true
     Logger.info('Dice Collector initialized', { system: game.system.id })
   }
 
@@ -141,6 +148,10 @@ export class DiceCollector {
         rollType: rollData.rollType,
         isCritical: rollData.isCritical,
         criticalType: rollData.criticalType,
+        // Criticality enrichment V2
+        severity: rollData.severity,
+        criticalLabel: rollData.criticalLabel,
+        criticalCategory: rollData.criticalCategory,
         // Enriched flavor data
         skill: rollData.skill,
         skillRaw: rollData.skillRaw,
@@ -168,6 +179,10 @@ export class DiceCollector {
           formula: rollData.rollFormula,
           result: rollData.result,
           isCritical: rollData.isCritical,
+          criticalType: rollData.criticalType,
+          severity: rollData.severity,
+          criticalLabel: rollData.criticalLabel,
+          criticalCategory: rollData.criticalCategory,
           rollType: rollData.rollType
         })
       } else {

@@ -8,19 +8,41 @@ import Logger from '../utils/logger.js'
 import { getSystemAdapter } from '../utils/system-adapters.js'
 import { classifyActor, shouldSyncActor as checkShouldSync, hasSystemSupport, getSystemConfig } from '../utils/actor-classifier.js'
 
+/**
+ * Simple string hash for change detection.
+ * Used to compare actor data between syncs and skip unchanged payloads.
+ */
+function simpleHash(str) {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash |= 0 // Convert to 32-bit integer
+  }
+  return hash.toString(36)
+}
+
 export class CharacterCollector {
   constructor(socketClient) {
     this.socket = socketClient
     this.systemAdapter = null
     this.syncedCharacters = new Map()
     this.syncDebounce = new Map()
-    this.debounceDelay = 2000 // 2 seconds debounce
+    this.lastSyncHash = new Map()
+    this.debounceDelay = 60_000 // 1 minute debounce
+    this.periodicSyncInterval = null
+    this.periodicSyncDelay = 5 * 60_000 // 5 minutes
   }
 
   /**
-   * Initialize the collector
+   * Initialize the collector (idempotent — safe to call on reconnection)
    */
   initialize() {
+    if (this._initialized) {
+      Logger.debug('Character Collector already initialized, skipping hook registration')
+      return
+    }
+
     this.systemAdapter = getSystemAdapter()
 
     // Actor update hooks
@@ -28,22 +50,77 @@ export class CharacterCollector {
     Hooks.on('createActor', this.onActorCreate.bind(this))
     Hooks.on('deleteActor', this.onActorDelete.bind(this))
 
-    // Item changes (for inventory sync)
+    // Item changes (for inventory/spell/feature sync)
     Hooks.on('createItem', this.onItemChange.bind(this))
     Hooks.on('updateItem', this.onItemChange.bind(this))
     Hooks.on('deleteItem', this.onItemChange.bind(this))
 
+    // Listen for on-demand sync requests from the backend
+    this.socket.addEventListener('command:request_sync', (event) => {
+      this.handleRequestSync(event.detail)
+    })
+
+    this._initialized = true
     Logger.info('Character Collector initialized')
 
     // Initial sync - game is already ready when this is called
     // (we're initialized after successful WebSocket connection)
     setTimeout(() => this.syncAllCharacters(), 2000)
+
+    // Start periodic full-sync
+    this.startPeriodicSync()
+  }
+
+  /**
+   * Start periodic full-sync interval
+   */
+  startPeriodicSync() {
+    if (this.periodicSyncInterval) return
+
+    this.periodicSyncInterval = setInterval(() => {
+      if (!this.socket?.connected) return
+
+      Logger.debug('Periodic sync triggered')
+      this.syncAllCharacters(false)
+    }, this.periodicSyncDelay)
+
+    Logger.info('Periodic sync started', { intervalMs: this.periodicSyncDelay })
+  }
+
+  /**
+   * Stop periodic full-sync interval
+   */
+  stopPeriodicSync() {
+    if (this.periodicSyncInterval) {
+      clearInterval(this.periodicSyncInterval)
+      this.periodicSyncInterval = null
+    }
+  }
+
+  /**
+   * Handle on-demand sync request from the backend.
+   * Used before executing spell actions to ensure fresh data.
+   */
+  handleRequestSync(data) {
+    Logger.info('On-demand sync requested by backend', data)
+
+    if (data?.actorId) {
+      const actor = game.actors?.get(data.actorId)
+      if (actor) {
+        this.syncCharacter(actor, true)
+      } else {
+        Logger.warn('Requested actor not found', { actorId: data.actorId })
+      }
+    } else {
+      this.syncAllCharacters(true)
+    }
   }
 
   /**
    * Sync all characters (PCs, NPCs, and Monsters)
+   * @param {boolean} force - Skip hash check and force sync all
    */
-  async syncAllCharacters() {
+  async syncAllCharacters(force = false) {
     if (!game.actors) {
       Logger.warn('Actors not available yet')
       return
@@ -82,27 +159,81 @@ export class CharacterCollector {
 
     Logger.info(`Syncing ${charactersToSync.length} characters...`, {
       system: systemId,
-      totalActors: game.actors.size
+      totalActors: game.actors.size,
+      force
     })
 
+    let syncedCount = 0
     for (const actor of charactersToSync) {
-      await this.syncCharacter(actor)
+      const didSync = await this.syncCharacter(actor, force)
+      if (didSync) syncedCount++
     }
 
-    Logger.info('Character sync complete', { syncedCount: charactersToSync.length })
+    Logger.info('Character sync complete', { syncedCount, totalChecked: charactersToSync.length })
   }
 
 
   /**
    * Sync a single character to Tumulte
+   * @param {Actor} actor - Foundry VTT actor document
+   * @param {boolean} force - Skip hash check and force sync
+   * @returns {boolean} true if data was actually sent
    */
-  async syncCharacter(actor) {
+  async syncCharacter(actor, force = false) {
     try {
       // Normalize avatar path (relative only, no localhost URLs)
       const avatarUrl = actor.img ? this.normalizeAvatarPath(actor.img) : null
 
       // Classify actor using multi-system classifier (pc, npc, or monster)
       const characterType = classifyActor(actor)
+
+      const stats = this.systemAdapter.extractStats(actor)
+      const inventory = this.systemAdapter.extractInventory(actor)
+
+      // Use dynamic item categories from Tumulte when available (supports any system),
+      // fall back to system adapter hardcoded types otherwise
+      const dynamicTypes = this.socket?.getTargetableItemTypes?.()
+      let spells
+      if (dynamicTypes && dynamicTypes.length > 0) {
+        spells = actor.items
+          .filter(item => dynamicTypes.includes(item.type))
+          .map(item => ({
+            id: item.id,
+            name: item.name,
+            img: item.img,
+            type: item.type,
+            level: item.system?.level ?? null,
+            school: item.system?.school ?? null,
+            prepared: item.system?.prepared ?? item.system?.preparation?.prepared ?? null,
+            uses: item.system?.uses ? {
+              value: item.system.uses.value ?? null,
+              max: item.system.uses.max ?? null,
+            } : null,
+            activeEffect: this._extractTumulteEffect(item),
+          }))
+        Logger.debug('Using dynamic item categories for spell extraction', {
+          types: dynamicTypes,
+          count: spells.length,
+        })
+      } else {
+        spells = this.systemAdapter.extractSpells(actor)
+        // Enrich system adapter spells with Tumulte effect flags
+        spells = spells.map(s => {
+          const item = actor.items.get(s.id)
+          return { ...s, activeEffect: item ? this._extractTumulteEffect(item) : null }
+        })
+      }
+
+      const features = this.systemAdapter.extractFeatures(actor)
+
+      // Hash-based dedup: skip sync if nothing changed
+      const dataForHash = JSON.stringify({ stats, inventory, spells, features, name: actor.name, avatarUrl })
+      const hash = simpleHash(dataForHash)
+
+      if (!force && this.lastSyncHash.get(actor.id) === hash) {
+        Logger.debug('Skipping sync (unchanged)', { name: actor.name, id: actor.id })
+        return false
+      }
 
       const characterData = {
         worldId: game.world.id,
@@ -111,8 +242,10 @@ export class CharacterCollector {
         name: actor.name,
         avatarUrl,
         characterType,
-        stats: this.systemAdapter.extractStats(actor),
-        inventory: this.systemAdapter.extractInventory(actor),
+        stats,
+        inventory,
+        spells,
+        features,
         vttData: {
           system: game.system.id,
           type: actor.type,
@@ -124,12 +257,15 @@ export class CharacterCollector {
         characterId: actor.id,
         name: actor.name,
         characterType,
-        campaignId: characterData.campaignId
+        campaignId: characterData.campaignId,
+        spellCount: spells.length,
+        featureCount: features.length,
       })
 
       const sent = this.socket.emit('character:update', characterData)
 
       if (sent) {
+        this.lastSyncHash.set(actor.id, hash)
         this.syncedCharacters.set(actor.id, {
           lastSync: Date.now(),
           name: actor.name
@@ -138,8 +274,11 @@ export class CharacterCollector {
         Logger.debug('Character synced', { name: actor.name, id: actor.id })
       }
 
+      return sent
+
     } catch (error) {
       Logger.error('Failed to sync character', { actor: actor.name, error })
+      return false
     }
   }
 
@@ -160,7 +299,7 @@ export class CharacterCollector {
     if (!checkShouldSync(actor)) return
 
     // Sync new character after a short delay
-    setTimeout(() => this.syncCharacter(actor), 1000)
+    setTimeout(() => this.syncCharacter(actor, true), 1000)
   }
 
   /**
@@ -169,6 +308,7 @@ export class CharacterCollector {
   onActorDelete(actor, options, userId) {
     // Remove from synced characters
     this.syncedCharacters.delete(actor.id)
+    this.lastSyncHash.delete(actor.id)
 
     // Clear any pending debounce
     if (this.syncDebounce.has(actor.id)) {
@@ -180,7 +320,7 @@ export class CharacterCollector {
   }
 
   /**
-   * Handle item changes (inventory updates)
+   * Handle item changes (inventory/spell/feature updates)
    */
   onItemChange(item, options, userId) {
     const actor = item.parent
@@ -232,7 +372,26 @@ export class CharacterCollector {
    */
   async resyncAll() {
     this.syncedCharacters.clear()
-    await this.syncAllCharacters()
+    this.lastSyncHash.clear()
+    await this.syncAllCharacters(true)
+  }
+
+  /**
+   * Extract active Tumulte effect from an item's flags.
+   * Returns a lightweight summary for backend filtering, or null if no effect.
+   * @param {Item} item - Foundry VTT item document
+   * @returns {{ type: string, expiresAt?: number|null }|null}
+   */
+  _extractTumulteEffect(item) {
+    try {
+      const disabled = item.getFlag?.('tumulte-integration', 'disabled')
+      const effect = item.getFlag?.('tumulte-integration', 'spellEffect')
+      if (disabled) return { type: 'disabled', expiresAt: disabled.expiresAt ?? null }
+      if (effect) return { type: effect.type }
+    } catch {
+      // getFlag may throw if module flags are not initialized
+    }
+    return null
   }
 
   /**
@@ -267,6 +426,21 @@ export class CharacterCollector {
 
     // Already a relative path - normalize it
     return path.startsWith('/') ? path : `/${path}`
+  }
+
+  /**
+   * Cleanup on destroy
+   */
+  destroy() {
+    this.stopPeriodicSync()
+
+    // Clear all debounce timers
+    for (const timer of this.syncDebounce.values()) {
+      clearTimeout(timer)
+    }
+    this.syncDebounce.clear()
+    this.lastSyncHash.clear()
+    this.syncedCharacters.clear()
   }
 }
 

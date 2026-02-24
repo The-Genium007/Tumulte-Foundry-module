@@ -4,6 +4,7 @@
  */
 
 import Logger from '../utils/logger.js'
+import { classifyActor } from '../utils/actor-classifier.js'
 
 export class CombatCollector {
   constructor(socketClient) {
@@ -12,9 +13,16 @@ export class CombatCollector {
   }
 
   /**
-   * Initialize the collector
+   * Initialize the collector (idempotent — safe to call on reconnection)
    */
   initialize() {
+    if (this._initialized) {
+      Logger.debug('Combat Collector already initialized, skipping hook registration')
+      // Still sync active combat on reconnection
+      this.syncActiveCombat()
+      return
+    }
+
     // Combat lifecycle hooks
     Hooks.on('createCombat', this.onCombatCreate.bind(this))
     Hooks.on('updateCombat', this.onCombatUpdate.bind(this))
@@ -30,6 +38,10 @@ export class CombatCollector {
     Hooks.on('deleteCombatant', this.onCombatantDelete.bind(this))
     Hooks.on('updateCombatant', this.onCombatantUpdate.bind(this))
 
+    // Scene change hook — re-sync combat when the active scene changes
+    Hooks.on('canvasReady', this.onSceneChange.bind(this))
+
+    this._initialized = true
     Logger.info('Combat Collector initialized')
 
     // Sync active combat if one exists (game is already ready when this is called)
@@ -65,6 +77,69 @@ export class CombatCollector {
       currentCombatant: combat.combatant ? this.extractCombatantData(combat.combatant) : null,
       timestamp: Date.now()
     })
+  }
+
+  /**
+   * Handle scene change (canvasReady) — re-sync or clear combat for the new scene.
+   *
+   * When the GM switches to a different scene:
+   * - If the new scene has an active combat → sync it (replaces Redis cache)
+   * - If the new scene has no combat → emit combat:end to clear Redis cache
+   *   and trigger monster effect cleanup
+   */
+  onSceneChange(canvas) {
+    const newSceneId = canvas.scene?.id
+    const combat = game.combat
+
+    Logger.info('Scene changed', {
+      sceneId: newSceneId,
+      sceneName: canvas.scene?.name,
+      hasCombat: !!combat?.active,
+      previousCombat: this.activeCombat,
+    })
+
+    if (combat?.active) {
+      // New scene has an active combat — sync it
+      if (this.activeCombat !== combat.id) {
+        // Different combat than before: cleanup old effects then sync new
+        if (this.activeCombat) {
+          if (typeof this.socket.cleanupMonsterEffects === 'function') {
+            this.socket.cleanupMonsterEffects().catch(err => {
+              Logger.error('Failed to cleanup monster effects on scene change', err)
+            })
+          }
+        }
+        this.activeCombat = combat.id
+        this.syncActiveCombat()
+      }
+      // Same combat (e.g. GM re-navigated to same scene) — just re-sync
+      else {
+        this.syncActiveCombat()
+      }
+    } else {
+      // No combat on new scene — clear the previous one
+      if (this.activeCombat) {
+        Logger.info('No combat on new scene, clearing previous combat', {
+          previousCombatId: this.activeCombat,
+        })
+
+        this.socket.emit('combat:end', {
+          worldId: game.world.id,
+          combatId: this.activeCombat,
+          finalRound: 0,
+          timestamp: Date.now()
+        })
+
+        // Cleanup monster effects from the previous scene
+        if (typeof this.socket.cleanupMonsterEffects === 'function') {
+          this.socket.cleanupMonsterEffects().catch(err => {
+            Logger.error('Failed to cleanup monster effects on scene change', err)
+          })
+        }
+
+        this.activeCombat = null
+      }
+    }
   }
 
   /**
@@ -170,6 +245,13 @@ export class CombatCollector {
     if (this.activeCombat === combat.id) {
       this.activeCombat = null
     }
+
+    // Auto-cleanup monster effects when combat ends
+    if (typeof this.socket.cleanupMonsterEffects === 'function') {
+      this.socket.cleanupMonsterEffects().catch(err => {
+        Logger.error('Failed to auto-cleanup monster effects on combat end', err)
+      })
+    }
   }
 
   /**
@@ -255,6 +337,7 @@ export class CombatCollector {
    */
   extractCombatantData(combatant) {
     const actor = combatant.actor
+    const characterType = actor ? classifyActor(actor) : 'npc'
 
     return {
       id: combatant.id,
@@ -263,34 +346,59 @@ export class CombatCollector {
       img: combatant.img || actor?.img,
       initiative: combatant.initiative,
       isDefeated: combatant.isDefeated,
-      isNPC: !actor?.hasPlayerOwner,
+      isNPC: characterType !== 'pc',
+      characterType,
       isVisible: combatant.visible,
       hp: actor ? this.extractHP(actor) : null
     }
   }
 
   /**
-   * Extract HP from actor
+   * Extract HP from actor (multi-system support)
    */
   extractHP(actor) {
-    const system = actor.system
+    const s = actor.system
+    if (!s) return null
 
-    // D&D 5e / Generic
-    if (system?.attributes?.hp) {
-      return {
-        current: system.attributes.hp.value,
-        max: system.attributes.hp.max,
-        temp: system.attributes.hp.temp || 0
-      }
+    // D&D 5e / PF2e / Generic (system.attributes.hp)
+    if (s.attributes?.hp) {
+      return { current: s.attributes.hp.value, max: s.attributes.hp.max, temp: s.attributes.hp.temp || 0 }
     }
-
-    // PF2e
-    if (system?.attributes?.hp?.value !== undefined) {
-      return {
-        current: system.attributes.hp.value,
-        max: system.attributes.hp.max,
-        temp: system.attributes.hp.temp || 0
-      }
+    // CoC7 (system.hp)
+    if (s.hp?.value !== undefined) {
+      return { current: s.hp.value, max: s.hp.max, temp: 0 }
+    }
+    // WFRP4e (system.status.wounds)
+    if (s.status?.wounds) {
+      return { current: s.status.wounds.value, max: s.status.wounds.max, temp: 0 }
+    }
+    // SWADE (system.wounds)
+    if (s.wounds?.value !== undefined && s.wounds?.max !== undefined) {
+      return { current: s.wounds.value, max: s.wounds.max, temp: 0 }
+    }
+    // Cyberpunk RED (system.derivedStats.hp)
+    if (s.derivedStats?.hp) {
+      return { current: s.derivedStats.hp.value, max: s.derivedStats.hp.max, temp: 0 }
+    }
+    // Alien RPG (system.header.health)
+    if (s.header?.health) {
+      return { current: s.header.health.value, max: s.header.health.max, temp: 0 }
+    }
+    // Star Wars FFG (system.stats.wounds)
+    if (s.stats?.wounds) {
+      return { current: s.stats.wounds.value, max: s.stats.wounds.max, temp: 0 }
+    }
+    // Shadowrun (system.track.physical)
+    if (s.track?.physical) {
+      return { current: s.track.physical.value, max: s.track.physical.max, temp: 0 }
+    }
+    // Forbidden Lands (system.attribute.strength = HP)
+    if (s.attribute?.strength) {
+      return { current: s.attribute.strength.value, max: s.attribute.strength.max, temp: 0 }
+    }
+    // Vaesen (system.condition.physical)
+    if (s.condition?.physical) {
+      return { current: s.condition.physical.value, max: s.condition.physical.max, temp: 0 }
     }
 
     return null

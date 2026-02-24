@@ -60,7 +60,9 @@ export class PairingManager {
           worldId: game.world.id,
           worldName: game.world.title,
           gmUserId: game.user.id,
-          moduleVersion: game.modules.get(MODULE_ID)?.version || '2.0.0'
+          moduleVersion: game.modules.get(MODULE_ID)?.version || '2.0.0',
+          gameSystemId: game.system?.id || null,
+          gameSystemName: game.system?.title || null,
         })
       })
 

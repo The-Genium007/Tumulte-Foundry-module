@@ -5,6 +5,16 @@ All notable changes to the Tumulte Integration module will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.3] - 2026-02-24
+
+### Fixed
+- Monster effects (Rage Bestiale, Vulnérabilité) no longer target player characters
+- Combat collector now uses `classifyActor()` instead of `hasPlayerOwner` for accurate PC/NPC/Monster classification
+- Added safety guard in `handleCommandApplyMonsterEffect`: blocks effect application if target is a PC
+
+### Changed
+- Combat data now includes `characterType` field (`pc`, `npc`, `monster`) for precise targeting
+
 ## [2.1.1] - 2025-02-04
 
 ### Changed
