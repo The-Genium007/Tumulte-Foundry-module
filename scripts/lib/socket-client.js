@@ -5,6 +5,7 @@
 
 import Logger from '../utils/logger.js'
 import TokenStorage from './token-storage.js'
+import { classifyActor } from '../utils/actor-classifier.js'
 
 const MODULE_ID = 'tumulte-integration'
 
@@ -1270,6 +1271,18 @@ export class TumulteSocketClient extends EventTarget {
       const actor = game.actors.get(actorId)
       if (!actor) {
         throw new Error(`Actor not found: ${actorId}`)
+      }
+
+      // Guard: only apply monster effects to NPCs and monsters, never to PCs
+      const actorClassification = classifyActor(actor)
+      if (actorClassification === 'pc') {
+        Logger.warn('Blocked monster effect on player character', {
+          actorId, actorName: actor.name, classification: actorClassification, requestId
+        })
+        throw new Error(
+          `Cannot apply monster effect to player character "${actor.name}". ` +
+          `Monster effects can only target NPCs and monsters.`
+        )
       }
 
       const effectType = effect?.type

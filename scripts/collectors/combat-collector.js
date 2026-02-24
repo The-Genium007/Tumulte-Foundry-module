@@ -4,6 +4,7 @@
  */
 
 import Logger from '../utils/logger.js'
+import { classifyActor } from '../utils/actor-classifier.js'
 
 export class CombatCollector {
   constructor(socketClient) {
@@ -336,6 +337,7 @@ export class CombatCollector {
    */
   extractCombatantData(combatant) {
     const actor = combatant.actor
+    const characterType = actor ? classifyActor(actor) : 'npc'
 
     return {
       id: combatant.id,
@@ -344,7 +346,8 @@ export class CombatCollector {
       img: combatant.img || actor?.img,
       initiative: combatant.initiative,
       isDefeated: combatant.isDefeated,
-      isNPC: !actor?.hasPlayerOwner,
+      isNPC: characterType !== 'pc',
+      characterType,
       isVisible: combatant.visible,
       hp: actor ? this.extractHP(actor) : null
     }
