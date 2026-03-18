@@ -442,9 +442,15 @@ export class TumulteSocketClient extends EventTarget {
    */
   async checkReauthorizationStatus() {
     try {
+      const apiKey = this.tokenStorage.getApiKey()
+      const headers = {}
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`
+      }
+
       const response = await fetch(
         `${this.serverUrl}/webhooks/foundry/reauthorization-status?worldId=${encodeURIComponent(this.worldId)}`,
-        { method: 'GET' }
+        { method: 'GET', headers }
       )
 
       if (!response.ok) {

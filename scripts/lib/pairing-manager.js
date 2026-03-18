@@ -148,7 +148,9 @@ export class PairingManager {
   }
 
   /**
-   * Check pairing status by polling the backend
+   * Check pairing status by polling the backend.
+   * The pairing code is sent as a required parameter so that only the module
+   * that initiated the session can retrieve the resulting tokens.
    */
   async checkPairingStatus() {
     if (!this.currentPairing) {
@@ -158,7 +160,7 @@ export class PairingManager {
 
     try {
       const response = await fetch(
-        `${this.tumulteUrl}/webhooks/foundry/pairing-status?worldId=${encodeURIComponent(this.currentPairing.worldId)}`,
+        `${this.tumulteUrl}/webhooks/foundry/pairing-status?worldId=${encodeURIComponent(this.currentPairing.worldId)}&code=${encodeURIComponent(this.currentPairing.code)}`,
         { method: 'GET' }
       )
 
