@@ -8,462 +8,391 @@
  * 3. Module polls for pairing status until completed
  * 4. Module receives tokens and stores them
  */
-
-import Logger from '../utils/logger.js'
-import TokenStorage from './token-storage.js'
-
-const MODULE_ID = 'tumulte-integration'
-const POLLING_INTERVAL = 2000 // 2 seconds
-
+import Logger from '../utils/logger.js';
+import TokenStorage from './token-storage.js';
+const MODULE_ID = 'tumulte-integration';
+const POLLING_INTERVAL = 2000; // 2 seconds
+// ─── Class ────────────────────────────────────────────────────────────────────
 export class PairingManager {
-  /**
-   * Create a PairingManager instance
-   * @param {Object} options - Configuration options
-   * @param {string} options.worldId - Required: The Foundry world ID (game.world.id)
-   * @param {string} options.tumulteUrl - Optional: Tumulte server URL
-   * @param {TokenStorage} options.tokenStorage - Optional: Custom TokenStorage instance
-   */
-  constructor(options = {}) {
-    if (!options.worldId) {
-      throw new Error('PairingManager requires a worldId')
+    worldId;
+    tumulteUrl;
+    tokenStorage;
+    currentPairing;
+    pairingTimeout;
+    pollingInterval;
+    onPairingComplete;
+    onPairingExpired;
+    /**
+     * Create a PairingManager instance
+     */
+    constructor(options) {
+        if (!options.worldId) {
+            throw new Error('PairingManager requires a worldId');
+        }
+        this.worldId = options.worldId;
+        this.tumulteUrl = options.tumulteUrl || 'http://localhost:3333';
+        this.tokenStorage = options.tokenStorage || new TokenStorage(options.worldId);
+        this.currentPairing = null;
+        this.pairingTimeout = null;
+        this.pollingInterval = null;
+        this.onPairingComplete = null;
+        this.onPairingExpired = null;
     }
-
-    this.worldId = options.worldId
-    this.tumulteUrl = options.tumulteUrl || 'http://localhost:3333'
-    this.tokenStorage = options.tokenStorage || new TokenStorage(options.worldId)
-
-    this.currentPairing = null
-    this.pairingTimeout = null
-    this.pollingInterval = null
-    this.onPairingComplete = null
-    this.onPairingExpired = null
-  }
-
-  /**
-   * Start a new pairing session
-   * Requests a code from the backend and starts polling for completion
-   */
-  async startPairing() {
-    try {
-      Logger.info('Starting pairing session...')
-
-      // Cancel any existing pairing
-      this.cancelPairing()
-
-      // Request pairing code from Tumulte backend
-      const response = await fetch(`${this.tumulteUrl}/webhooks/foundry/request-pairing`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          worldId: game.world.id,
-          worldName: game.world.title,
-          gmUserId: game.user.id,
-          moduleVersion: game.modules.get(MODULE_ID)?.version || '2.0.0',
-          gameSystemId: game.system?.id || null,
-          gameSystemName: game.system?.title || null,
-        })
-      })
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-        throw new Error(error.error || `Failed to start pairing: HTTP ${response.status}`)
-      }
-
-      const data = await response.json()
-
-      // Validate required fields in response
-      if (!data.code || typeof data.expiresIn !== 'number') {
-        throw new Error('Invalid response from server: missing required fields (code, expiresIn)')
-      }
-
-      const { code, expiresIn, expiresAt, serverUrl } = data
-
-      // Store server URL from backend response
-      if (serverUrl) {
-        this.tumulteUrl = serverUrl
-        // Save to Foundry settings for persistence
-        await game.settings.set(MODULE_ID, 'serverUrl', serverUrl)
-        Logger.info('Server URL set from backend', { serverUrl })
-      }
-
-      // Store current pairing info
-      this.currentPairing = {
-        code,
-        worldId: game.world.id,
-        expiresAt,
-        expiresIn,
-        serverUrl: this.tumulteUrl,
-        createdAt: Date.now()
-      }
-
-      // Set timeout to expire pairing
-      this.setPairingTimeout(expiresIn * 1000)
-
-      // Start polling for completion
-      this.startPolling()
-
-      Logger.info('Pairing session started', { code, expiresIn, serverUrl: this.tumulteUrl })
-
-      return {
-        code,
-        expiresAt,
-        expiresIn,
-        serverUrl: this.tumulteUrl
-      }
-
-    } catch (error) {
-      Logger.error('Failed to start pairing', error)
-      throw error
+    /**
+     * Start a new pairing session
+     * Requests a code from the backend and starts polling for completion
+     */
+    async startPairing() {
+        try {
+            Logger.info('Starting pairing session...');
+            // Cancel any existing pairing
+            this.cancelPairing();
+            // Request pairing code from Tumulte backend
+            const response = await fetch(`${this.tumulteUrl}/webhooks/foundry/request-pairing`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    worldId: game.world.id,
+                    worldName: game.world.title,
+                    gmUserId: game.user.id,
+                    moduleVersion: game.modules.get(MODULE_ID)?.version || '2.0.0',
+                    gameSystemId: game.system?.id || null,
+                    gameSystemName: game.system?.title || null,
+                })
+            });
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+                throw new Error(error.error || `Failed to start pairing: HTTP ${response.status}`);
+            }
+            const data = await response.json();
+            // Validate required fields in response
+            if (!data.code || typeof data.expiresIn !== 'number') {
+                throw new Error('Invalid response from server: missing required fields (code, expiresIn)');
+            }
+            const { code, expiresIn, expiresAt, serverUrl } = data;
+            // Store server URL from backend response
+            if (serverUrl) {
+                this.tumulteUrl = serverUrl;
+                // Save to Foundry settings for persistence
+                await game.settings.set(MODULE_ID, 'serverUrl', serverUrl);
+                Logger.info('Server URL set from backend', { serverUrl });
+            }
+            // Store current pairing info
+            this.currentPairing = {
+                code,
+                worldId: game.world.id,
+                expiresAt,
+                expiresIn,
+                serverUrl: this.tumulteUrl,
+                createdAt: Date.now()
+            };
+            // Set timeout to expire pairing
+            this.setPairingTimeout(expiresIn * 1000);
+            // Start polling for completion
+            this.startPolling();
+            Logger.info('Pairing session started', { code, expiresIn, serverUrl: this.tumulteUrl });
+            return {
+                code,
+                expiresAt,
+                expiresIn,
+                serverUrl: this.tumulteUrl
+            };
+        }
+        catch (error) {
+            Logger.error('Failed to start pairing', error);
+            throw error;
+        }
     }
-  }
-
-  /**
-   * Start polling for pairing completion
-   */
-  startPolling() {
-    if (this.pollingInterval) {
-      clearInterval(this.pollingInterval)
+    /**
+     * Start polling for pairing completion
+     */
+    startPolling() {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+        }
+        this.pollingInterval = setInterval(async () => {
+            try {
+                await this.checkPairingStatus();
+            }
+            catch (error) {
+                Logger.error('Critical polling error, stopping polling', error);
+                this.stopPolling();
+            }
+        }, POLLING_INTERVAL);
     }
-
-    this.pollingInterval = setInterval(async () => {
-      try {
-        await this.checkPairingStatus()
-      } catch (error) {
-        Logger.error('Critical polling error, stopping polling', error)
-        this.stopPolling()
-      }
-    }, POLLING_INTERVAL)
-  }
-
-  /**
-   * Stop polling
-   */
-  stopPolling() {
-    if (this.pollingInterval) {
-      clearInterval(this.pollingInterval)
-      this.pollingInterval = null
+    /**
+     * Stop polling
+     */
+    stopPolling() {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
+        }
     }
-  }
-
-  /**
-   * Check pairing status by polling the backend.
-   * The pairing code is sent as a required parameter so that only the module
-   * that initiated the session can retrieve the resulting tokens.
-   */
-  async checkPairingStatus() {
-    if (!this.currentPairing) {
-      this.stopPolling()
-      return
+    /**
+     * Check pairing status by polling the backend.
+     * The pairing code is sent as a required parameter so that only the module
+     * that initiated the session can retrieve the resulting tokens.
+     */
+    async checkPairingStatus() {
+        if (!this.currentPairing) {
+            this.stopPolling();
+            return;
+        }
+        try {
+            const response = await fetch(`${this.tumulteUrl}/webhooks/foundry/pairing-status?worldId=${encodeURIComponent(this.currentPairing.worldId)}&code=${encodeURIComponent(this.currentPairing.code)}`, { method: 'GET' });
+            if (!response.ok) {
+                Logger.warn('Failed to check pairing status', { status: response.status });
+                return;
+            }
+            const result = await response.json();
+            switch (result.status) {
+                case 'completed':
+                    // Pairing completed! Store tokens
+                    Logger.info('Pairing completed via backend');
+                    await this.completePairingFromBackend(result);
+                    break;
+                case 'expired':
+                    Logger.info('Pairing expired');
+                    this.handlePairingExpired();
+                    break;
+                case 'pending':
+                    // Still waiting, continue polling
+                    Logger.debug('Pairing still pending', { remainingSeconds: result.remainingSeconds });
+                    break;
+                case 'not_found':
+                    // Session was cancelled or never existed
+                    Logger.warn('Pairing session not found');
+                    this.cancelPairing();
+                    break;
+                default:
+                    Logger.warn('Unknown pairing status', { status: result.status });
+            }
+        }
+        catch (error) {
+            Logger.error('Error checking pairing status', error);
+        }
     }
-
-    try {
-      const response = await fetch(
-        `${this.tumulteUrl}/webhooks/foundry/pairing-status?worldId=${encodeURIComponent(this.currentPairing.worldId)}&code=${encodeURIComponent(this.currentPairing.code)}`,
-        { method: 'GET' }
-      )
-
-      if (!response.ok) {
-        Logger.warn('Failed to check pairing status', { status: response.status })
-        return
-      }
-
-      const result = await response.json()
-
-      switch (result.status) {
-        case 'completed':
-          // Pairing completed! Store tokens
-          Logger.info('Pairing completed via backend')
-          await this.completePairingFromBackend(result)
-          break
-
-        case 'expired':
-          Logger.info('Pairing expired')
-          this.handlePairingExpired()
-          break
-
-        case 'pending':
-          // Still waiting, continue polling
-          Logger.debug('Pairing still pending', { remainingSeconds: result.remainingSeconds })
-          break
-
-        case 'not_found':
-          // Session was cancelled or never existed
-          Logger.warn('Pairing session not found')
-          this.cancelPairing()
-          break
-
-        default:
-          Logger.warn('Unknown pairing status', { status: result.status })
-      }
-
-    } catch (error) {
-      Logger.error('Error checking pairing status', error)
+    /**
+     * Complete pairing with data received from backend polling
+     */
+    async completePairingFromBackend(data) {
+        try {
+            // Stop polling
+            this.stopPolling();
+            // Store server URL if provided (for future connections)
+            if (data.serverUrl) {
+                this.tumulteUrl = data.serverUrl;
+                await game.settings.set(MODULE_ID, 'serverUrl', data.serverUrl);
+                Logger.info('Server URL saved from pairing completion', { serverUrl: data.serverUrl });
+            }
+            // Store tokens
+            await this.tokenStorage.storeTokens(data.sessionToken, data.refreshToken, data.expiresIn);
+            // Store connection info
+            await this.tokenStorage.storeConnectionId(data.connectionId);
+            await this.tokenStorage.storeApiKey(data.apiKey);
+            // Store fingerprint for security validation on token refresh
+            if (data.fingerprint) {
+                await this.tokenStorage.storeFingerprint(data.fingerprint);
+                Logger.debug('Fingerprint stored from pairing', { fingerprintPreview: data.fingerprint.substring(0, 8) + '...' });
+            }
+            const completedPairing = this.currentPairing;
+            // Clear pairing session
+            this.currentPairing = null;
+            if (this.pairingTimeout) {
+                clearTimeout(this.pairingTimeout);
+                this.pairingTimeout = null;
+            }
+            Logger.info('Pairing completed successfully', {
+                connectionId: data.connectionId,
+                serverUrl: this.tumulteUrl
+            });
+            // Notify callback if registered
+            if (this.onPairingComplete) {
+                this.onPairingComplete({
+                    success: true,
+                    connectionId: data.connectionId,
+                    worldId: completedPairing?.worldId,
+                    serverUrl: this.tumulteUrl
+                });
+            }
+            return { success: true, connectionId: data.connectionId, serverUrl: this.tumulteUrl };
+        }
+        catch (error) {
+            Logger.error('Failed to complete pairing', error);
+            throw error;
+        }
     }
-  }
-
-  /**
-   * Complete pairing with data received from backend polling
-   */
-  async completePairingFromBackend(data) {
-    try {
-      // Stop polling
-      this.stopPolling()
-
-      // Store server URL if provided (for future connections)
-      if (data.serverUrl) {
-        this.tumulteUrl = data.serverUrl
-        await game.settings.set(MODULE_ID, 'serverUrl', data.serverUrl)
-        Logger.info('Server URL saved from pairing completion', { serverUrl: data.serverUrl })
-      }
-
-      // Store tokens
-      await this.tokenStorage.storeTokens(
-        data.sessionToken,
-        data.refreshToken,
-        data.expiresIn
-      )
-
-      // Store connection info
-      await this.tokenStorage.storeConnectionId(data.connectionId)
-      await this.tokenStorage.storeApiKey(data.apiKey)
-
-      // Store fingerprint for security validation on token refresh
-      if (data.fingerprint) {
-        await this.tokenStorage.storeFingerprint(data.fingerprint)
-        Logger.debug('Fingerprint stored from pairing', { fingerprintPreview: data.fingerprint.substring(0, 8) + '...' })
-      }
-
-      const completedPairing = this.currentPairing
-
-      // Clear pairing session
-      this.currentPairing = null
-      if (this.pairingTimeout) {
-        clearTimeout(this.pairingTimeout)
-        this.pairingTimeout = null
-      }
-
-      Logger.info('Pairing completed successfully', {
-        connectionId: data.connectionId,
-        serverUrl: this.tumulteUrl
-      })
-
-      // Notify callback if registered
-      if (this.onPairingComplete) {
-        this.onPairingComplete({
-          success: true,
-          connectionId: data.connectionId,
-          worldId: completedPairing?.worldId,
-          serverUrl: this.tumulteUrl
-        })
-      }
-
-      return { success: true, connectionId: data.connectionId, serverUrl: this.tumulteUrl }
-
-    } catch (error) {
-      Logger.error('Failed to complete pairing', error)
-      throw error
+    /**
+     * Handle pairing expiration
+     */
+    handlePairingExpired() {
+        this.stopPolling();
+        this.currentPairing = null;
+        if (this.pairingTimeout) {
+            clearTimeout(this.pairingTimeout);
+            this.pairingTimeout = null;
+        }
+        // Notify callback if registered
+        if (this.onPairingExpired) {
+            this.onPairingExpired();
+        }
     }
-  }
-
-  /**
-   * Handle pairing expiration
-   */
-  handlePairingExpired() {
-    this.stopPolling()
-    this.currentPairing = null
-    if (this.pairingTimeout) {
-      clearTimeout(this.pairingTimeout)
-      this.pairingTimeout = null
+    /**
+     * Set timeout to expire current pairing
+     */
+    setPairingTimeout(duration) {
+        if (this.pairingTimeout) {
+            clearTimeout(this.pairingTimeout);
+        }
+        this.pairingTimeout = setTimeout(() => {
+            if (this.currentPairing) {
+                Logger.info('Pairing session expired (timeout)');
+                this.handlePairingExpired();
+            }
+        }, duration);
     }
-
-    // Notify callback if registered
-    if (this.onPairingExpired) {
-      this.onPairingExpired()
+    /**
+     * Cancel current pairing session
+     */
+    cancelPairing() {
+        this.stopPolling();
+        if (this.pairingTimeout) {
+            clearTimeout(this.pairingTimeout);
+            this.pairingTimeout = null;
+        }
+        this.currentPairing = null;
+        Logger.info('Pairing cancelled');
     }
-  }
-
-  /**
-   * Set timeout to expire current pairing
-   */
-  setPairingTimeout(duration) {
-    if (this.pairingTimeout) {
-      clearTimeout(this.pairingTimeout)
+    /**
+     * Complete pairing by storing tokens received from callback
+     * Used when tokens are received via WebSocket or other means
+     */
+    async completePairing(connectionData) {
+        try {
+            const { connection, tokens } = connectionData;
+            // Stop polling
+            this.stopPolling();
+            // Store tokens
+            await this.tokenStorage.storeTokens(tokens.sessionToken, tokens.refreshToken, tokens.expiresIn);
+            // Store connection ID
+            await this.tokenStorage.storeConnectionId(connection.id);
+            // Store API key if provided
+            if (connection.apiKey) {
+                await this.tokenStorage.storeApiKey(connection.apiKey);
+            }
+            // Store fingerprint for security validation on token refresh
+            if (tokens.fingerprint) {
+                await this.tokenStorage.storeFingerprint(tokens.fingerprint);
+                Logger.debug('Fingerprint stored from pairing', { fingerprintPreview: tokens.fingerprint.substring(0, 8) + '...' });
+            }
+            // Clear pairing session
+            this.currentPairing = null;
+            if (this.pairingTimeout) {
+                clearTimeout(this.pairingTimeout);
+                this.pairingTimeout = null;
+            }
+            Logger.info('Pairing completed successfully', {
+                connectionId: connection.id,
+                worldName: connection.worldName
+            });
+            // Notify callback if registered
+            if (this.onPairingComplete) {
+                this.onPairingComplete({
+                    success: true,
+                    connectionId: connection.id,
+                    worldName: connection.worldName
+                });
+            }
+            return {
+                success: true,
+                connectionId: connection.id,
+                worldName: connection.worldName
+            };
+        }
+        catch (error) {
+            Logger.error('Failed to complete pairing', error);
+            throw error;
+        }
     }
-
-    this.pairingTimeout = setTimeout(() => {
-      if (this.currentPairing) {
-        Logger.info('Pairing session expired (timeout)')
-        this.handlePairingExpired()
-      }
-    }, duration)
-  }
-
-  /**
-   * Cancel current pairing session
-   */
-  cancelPairing() {
-    this.stopPolling()
-
-    if (this.pairingTimeout) {
-      clearTimeout(this.pairingTimeout)
-      this.pairingTimeout = null
+    /**
+     * Check if currently paired
+     */
+    isPaired() {
+        return this.tokenStorage.isPaired();
     }
-
-    this.currentPairing = null
-    Logger.info('Pairing cancelled')
-  }
-
-  /**
-   * Complete pairing by storing tokens received from callback
-   * Used when tokens are received via WebSocket or other means
-   */
-  async completePairing(connectionData) {
-    try {
-      const { connection, tokens } = connectionData
-
-      // Stop polling
-      this.stopPolling()
-
-      // Store tokens
-      await this.tokenStorage.storeTokens(
-        tokens.sessionToken,
-        tokens.refreshToken,
-        tokens.expiresIn
-      )
-
-      // Store connection ID
-      await this.tokenStorage.storeConnectionId(connection.id)
-
-      // Store API key if provided
-      if (connection.apiKey) {
-        await this.tokenStorage.storeApiKey(connection.apiKey)
-      }
-
-      // Store fingerprint for security validation on token refresh
-      if (tokens.fingerprint) {
-        await this.tokenStorage.storeFingerprint(tokens.fingerprint)
-        Logger.debug('Fingerprint stored from pairing', { fingerprintPreview: tokens.fingerprint.substring(0, 8) + '...' })
-      }
-
-      // Clear pairing session
-      this.currentPairing = null
-      if (this.pairingTimeout) {
-        clearTimeout(this.pairingTimeout)
-        this.pairingTimeout = null
-      }
-
-      Logger.info('Pairing completed successfully', {
-        connectionId: connection.id,
-        worldName: connection.worldName
-      })
-
-      // Notify callback if registered
-      if (this.onPairingComplete) {
-        this.onPairingComplete({
-          success: true,
-          connectionId: connection.id,
-          worldName: connection.worldName
-        })
-      }
-
-      return {
-        success: true,
-        connectionId: connection.id,
-        worldName: connection.worldName
-      }
-
-    } catch (error) {
-      Logger.error('Failed to complete pairing', error)
-      throw error
+    /**
+     * Get current pairing status
+     */
+    getPairingStatus() {
+        if (!this.currentPairing) {
+            return { active: false };
+        }
+        const remainingTime = this.currentPairing.expiresAt - Date.now();
+        return {
+            active: remainingTime > 0,
+            code: this.currentPairing.code,
+            expiresAt: this.currentPairing.expiresAt,
+            remainingSeconds: Math.max(0, Math.floor(remainingTime / 1000))
+        };
     }
-  }
-
-  /**
-   * Check if currently paired
-   */
-  isPaired() {
-    return this.tokenStorage.isPaired()
-  }
-
-  /**
-   * Get current pairing status
-   */
-  getPairingStatus() {
-    if (!this.currentPairing) {
-      return { active: false }
+    /**
+     * Get formatted pairing code for display (ABC-123)
+     */
+    getFormattedCode() {
+        if (!this.currentPairing?.code)
+            return null;
+        return this.currentPairing.code;
     }
-
-    const remainingTime = this.currentPairing.expiresAt - Date.now()
-
-    return {
-      active: remainingTime > 0,
-      code: this.currentPairing.code,
-      expiresAt: this.currentPairing.expiresAt,
-      remainingSeconds: Math.max(0, Math.floor(remainingTime / 1000))
+    /**
+     * Register callback for pairing completion
+     */
+    onComplete(callback) {
+        this.onPairingComplete = callback;
     }
-  }
-
-  /**
-   * Get formatted pairing code for display (ABC-123)
-   */
-  getFormattedCode() {
-    if (!this.currentPairing?.code) return null
-    return this.currentPairing.code
-  }
-
-  /**
-   * Register callback for pairing completion
-   */
-  onComplete(callback) {
-    this.onPairingComplete = callback
-  }
-
-  /**
-   * Register callback for pairing expiration
-   */
-  onExpired(callback) {
-    this.onPairingExpired = callback
-  }
-
-  /**
-   * Clear all registered callbacks
-   * Should be called before registering new callbacks to prevent memory leaks
-   */
-  clearCallbacks() {
-    this.onPairingComplete = null
-    this.onPairingExpired = null
-  }
-
-  /**
-   * Unpair and clear tokens
-   */
-  async unpair() {
-    // Notify backend if we have a connection
-    const connectionId = this.tokenStorage.getConnectionId()
-    const apiKey = this.tokenStorage.getApiKey()
-
-    if (connectionId && apiKey) {
-      try {
-        await fetch(`${this.tumulteUrl}/webhooks/foundry/revoke`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            connectionId,
-            apiKey,
-            reason: 'User disconnected from Foundry'
-          })
-        })
-      } catch (error) {
-        Logger.warn('Failed to notify backend of disconnection', error)
-      }
+    /**
+     * Register callback for pairing expiration
+     */
+    onExpired(callback) {
+        this.onPairingExpired = callback;
     }
-
-    await this.tokenStorage.clearTokens()
-    this.cancelPairing()
-    Logger.info('Unpaired from Tumulte')
-  }
+    /**
+     * Clear all registered callbacks
+     * Should be called before registering new callbacks to prevent memory leaks
+     */
+    clearCallbacks() {
+        this.onPairingComplete = null;
+        this.onPairingExpired = null;
+    }
+    /**
+     * Unpair and clear tokens
+     */
+    async unpair() {
+        // Notify backend if we have a connection
+        const connectionId = this.tokenStorage.getConnectionId();
+        const apiKey = this.tokenStorage.getApiKey();
+        if (connectionId && apiKey) {
+            try {
+                await fetch(`${this.tumulteUrl}/webhooks/foundry/revoke`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        connectionId,
+                        apiKey,
+                        reason: 'User disconnected from Foundry'
+                    })
+                });
+            }
+            catch (error) {
+                Logger.warn('Failed to notify backend of disconnection', error);
+            }
+        }
+        await this.tokenStorage.clearTokens();
+        this.cancelPairing();
+        Logger.info('Unpaired from Tumulte');
+    }
 }
-
-export default PairingManager
+export default PairingManager;
+//# sourceMappingURL=pairing-manager.js.map

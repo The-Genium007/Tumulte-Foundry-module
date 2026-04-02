@@ -8,32 +8,53 @@
  * Automatically detects the PixiJS/WebGL version and uses the appropriate GLSL syntax.
  * No external dependency required.
  */
+
+interface CanvasApp {
+  renderer?: RendererWithContext
+}
+
+interface RendererWithContext {
+  context?: {
+    webGLVersion?: number
+    gl?: unknown
+  }
+  gl?: unknown
+}
+
+interface GlowFilterOptions {
+  distance?: number
+  outerStrength?: number
+  innerStrength?: number
+  color?: number
+  alpha?: number
+  quality?: number
+  knockout?: boolean
+}
+
 /**
  * Detect whether we need GLSL 300 ES syntax.
  * Foundry v12+ uses PixiJS v7 which creates a WebGL2 context by default.
  * In WebGL2, GLSL 300 ES is preferred for reliability across GPU drivers.
  */
-function isWebGL2Context() {
-    try {
-        const canvasRef = canvas;
-        const renderer = canvasRef?.app?.renderer;
-        if (!renderer)
-            return false;
-        // PixiJS v7 renderer.context.webGLVersion === 2
-        if (renderer.context?.webGLVersion === 2)
-            return true;
-        // Fallback: check gl instance
-        const gl = renderer.gl ?? renderer.context?.gl;
-        if (gl instanceof WebGL2RenderingContext)
-            return true;
-        return false;
-    }
-    catch {
-        return false;
-    }
+function isWebGL2Context(): boolean {
+  try {
+    const canvasRef = canvas as (Canvas & { app?: CanvasApp }) | undefined
+    const renderer = canvasRef?.app?.renderer
+    if (!renderer) return false
+    // PixiJS v7 renderer.context.webGLVersion === 2
+    if (renderer.context?.webGLVersion === 2) return true
+    // Fallback: check gl instance
+    const gl = renderer.gl ?? renderer.context?.gl
+    if (gl instanceof WebGL2RenderingContext) return true
+    return false
+  } catch {
+    return false
+  }
 }
+
 // -- GLSL 100 (WebGL1 / PixiJS v5 / Foundry v11) --
-const vertexShaderGL1 = `
+
+const vertexShaderGL1: string = `
 attribute vec2 aVertexPosition;
 attribute vec2 aTextureCoord;
 
@@ -45,11 +66,13 @@ void main(void) {
     gl_Position = vec4((projectionMatrix * vec3(aVertexPosition, 1.0)).xy, 0.0, 1.0);
     vTextureCoord = aTextureCoord;
 }
-`;
-function buildFragmentShaderGL1(distance, quality) {
-    const angleStepSize = Math.min((1 / quality / distance), Math.PI * 2).toFixed(7);
-    const dist = distance.toFixed(0) + '.0';
-    return `
+`
+
+function buildFragmentShaderGL1(distance: number, quality: number): string {
+  const angleStepSize = Math.min((1 / quality / distance), Math.PI * 2).toFixed(7)
+  const dist = distance.toFixed(0) + '.0'
+
+  return `
 varying vec2 vTextureCoord;
 
 uniform sampler2D uSampler;
@@ -107,10 +130,12 @@ void main(void) {
         gl_FragColor = innerColor + outerGlowColor;
     }
 }
-`;
+`
 }
+
 // -- GLSL 300 ES (WebGL2 / PixiJS v7 / Foundry v12-v13) --
-const vertexShaderGL2 = `#version 300 es
+
+const vertexShaderGL2: string = `#version 300 es
 precision highp float;
 
 in vec2 aVertexPosition;
@@ -124,11 +149,13 @@ void main(void) {
     gl_Position = vec4((projectionMatrix * vec3(aVertexPosition, 1.0)).xy, 0.0, 1.0);
     vTextureCoord = aTextureCoord;
 }
-`;
-function buildFragmentShaderGL2(distance, quality) {
-    const angleStepSize = Math.min((1 / quality / distance), Math.PI * 2).toFixed(7);
-    const dist = distance.toFixed(0) + '.0';
-    return `#version 300 es
+`
+
+function buildFragmentShaderGL2(distance: number, quality: number): string {
+  const angleStepSize = Math.min((1 / quality / distance), Math.PI * 2).toFixed(7)
+  const dist = distance.toFixed(0) + '.0'
+
+  return `#version 300 es
 precision mediump float;
 
 in vec2 vTextureCoord;
@@ -190,73 +217,92 @@ void main(void) {
         fragColor = innerColor + outerGlowColor;
     }
 }
-`;
+`
 }
+
 // -- Filter Class --
+
 export class TumulteGlowFilter extends PIXI.Filter {
-    _colorHex;
-    constructor(options = {}) {
-        const distance = options.distance ?? 10;
-        const quality = options.quality ?? 0.3;
-        const color = options.color ?? 0xFFFFFF;
-        const outerStrength = options.outerStrength ?? 3;
-        const innerStrength = options.innerStrength ?? 0.5;
-        const alpha = options.alpha ?? 1;
-        const knockout = options.knockout ?? false;
-        const useGL2 = isWebGL2Context();
-        const vertex = useGL2 ? vertexShaderGL2 : vertexShaderGL1;
-        const fragment = useGL2
-            ? buildFragmentShaderGL2(distance, quality)
-            : buildFragmentShaderGL1(distance, quality);
-        super(vertex, fragment, {
-            uStrength: new Float32Array([innerStrength, outerStrength]),
-            uColor: new Float32Array(3),
-            uAlpha: alpha,
-            uKnockout: knockout ? 1 : 0,
-        });
-        this._colorHex = 0;
-        this.padding = distance;
-        // Set color
-        this.color = color;
-    }
-    /**
-     * The color of the glow as a hex integer (e.g. 0x10B981)
-     */
-    get color() {
-        return this._colorHex;
-    }
-    set color(value) {
-        this._colorHex = value;
-        const r = ((value >> 16) & 0xFF) / 255;
-        const g = ((value >> 8) & 0xFF) / 255;
-        const b = (value & 0xFF) / 255;
-        const uColor = this.uniforms.uColor;
-        uColor[0] = r;
-        uColor[1] = g;
-        uColor[2] = b;
-    }
-    get outerStrength() {
-        const uStrength = this.uniforms.uStrength;
-        return uStrength[1];
-    }
-    set outerStrength(value) {
-        const uStrength = this.uniforms.uStrength;
-        uStrength[1] = value;
-    }
-    get innerStrength() {
-        const uStrength = this.uniforms.uStrength;
-        return uStrength[0];
-    }
-    set innerStrength(value) {
-        const uStrength = this.uniforms.uStrength;
-        uStrength[0] = value;
-    }
-    get alpha() {
-        return this.uniforms.uAlpha;
-    }
-    set alpha(value) {
-        this.uniforms.uAlpha = value;
-    }
+  private _colorHex: number
+
+  constructor(options: GlowFilterOptions = {}) {
+    const distance = options.distance ?? 10
+    const quality = options.quality ?? 0.3
+    const color = options.color ?? 0xFFFFFF
+    const outerStrength = options.outerStrength ?? 3
+    const innerStrength = options.innerStrength ?? 0.5
+    const alpha = options.alpha ?? 1
+    const knockout = options.knockout ?? false
+
+    const useGL2 = isWebGL2Context()
+    const vertex = useGL2 ? vertexShaderGL2 : vertexShaderGL1
+    const fragment = useGL2
+      ? buildFragmentShaderGL2(distance, quality)
+      : buildFragmentShaderGL1(distance, quality)
+
+    super(
+      vertex,
+      fragment,
+      {
+        uStrength: new Float32Array([innerStrength, outerStrength]),
+        uColor: new Float32Array(3),
+        uAlpha: alpha,
+        uKnockout: knockout ? 1 : 0,
+      }
+    )
+
+    this._colorHex = 0
+    this.padding = distance
+
+    // Set color
+    this.color = color
+  }
+
+  /**
+   * The color of the glow as a hex integer (e.g. 0x10B981)
+   */
+  get color(): number {
+    return this._colorHex
+  }
+
+  set color(value: number) {
+    this._colorHex = value
+    const r = ((value >> 16) & 0xFF) / 255
+    const g = ((value >> 8) & 0xFF) / 255
+    const b = (value & 0xFF) / 255
+    const uColor = this.uniforms.uColor as Float32Array
+    uColor[0] = r
+    uColor[1] = g
+    uColor[2] = b
+  }
+
+  get outerStrength(): number {
+    const uStrength = this.uniforms.uStrength as Float32Array
+    return uStrength[1] as number
+  }
+
+  set outerStrength(value: number) {
+    const uStrength = this.uniforms.uStrength as Float32Array
+    uStrength[1] = value
+  }
+
+  get innerStrength(): number {
+    const uStrength = this.uniforms.uStrength as Float32Array
+    return uStrength[0] as number
+  }
+
+  set innerStrength(value: number) {
+    const uStrength = this.uniforms.uStrength as Float32Array
+    uStrength[0] = value
+  }
+
+  get alpha(): number {
+    return this.uniforms.uAlpha as number
+  }
+
+  set alpha(value: number) {
+    this.uniforms.uAlpha = value
+  }
 }
-export default TumulteGlowFilter;
-//# sourceMappingURL=glow-filter.js.map
+
+export default TumulteGlowFilter

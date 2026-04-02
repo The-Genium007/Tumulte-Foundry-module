@@ -1,7 +1,7 @@
 # Tumulte Integration for Foundry VTT
 
-[![Foundry Version](https://img.shields.io/badge/Foundry-v11+-green)](https://foundryvtt.com/)
-[![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
+[![Foundry Version](https://img.shields.io/badge/Foundry-v11--v13-green)](https://foundryvtt.com/)
+[![License](https://img.shields.io/badge/License-Proprietary-red)](LICENSE)
 
 Connect your Foundry VTT game to [Tumulte](https://tumulte.app) and display dice rolls, character data, and combat tracking on your Twitch stream overlay.
 
@@ -10,7 +10,9 @@ Connect your Foundry VTT game to [Tumulte](https://tumulte.app) and display dice
 - **Dice Rolls** — Send critical hits, critical fails, or all rolls to your overlay
 - **Combat Tracking** — Real-time turn order and round updates
 - **Character Sync** — Automatic HP and stats synchronization
-- **Multi-System** — Works with D&D 5e, Pathfinder 2e, and other systems
+- **Spell & Effect Tracking** — Track spell usage, buffs, and debuffs
+- **Gamification** — Twitch Channel Points integration for in-game effects
+- **Multi-System** — 15+ supported systems including D&D 5e, Pathfinder 2e, Call of Cthulhu, WFRP4e, and more
 
 ## Installation
 
@@ -46,9 +48,9 @@ Copy the module folder to `[FoundryData]/Data/modules/tumulte-integration/`
 
 ## Support
 
-- [GitHub Issues](https://github.com/tumulte/foundry-integration/issues)
+- [GitHub Issues](https://github.com/The-Genium007/Tumulte/discussions/categories/bugs-issues)
 - [Tumulte Discord](https://discord.gg/tumulte)
 
 ## License
 
-MIT License
+This module is proprietary software. All rights reserved. See the [LICENSE](LICENSE) file for details.
