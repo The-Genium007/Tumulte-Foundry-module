@@ -174,37 +174,46 @@ export class CharacterCollector {
             const characterType = classifyActor(actor);
             const stats = this.systemAdapter.extractStats(actor);
             const inventory = this.systemAdapter.extractInventory(actor);
-            // Use dynamic item categories from Tumulte when available (supports any system),
-            // fall back to system adapter hardcoded types otherwise
+            // Always use system adapter for field extraction (handles system-specific paths
+            // like PF2e traditions vs D&D 5e schools), then filter by dynamic item categories
             const dynamicTypes = this.socket?.getTargetableItemTypes?.();
             let spells;
+            // Extract spells via system adapter (correct field mapping per game system)
+            const adapterSpells = this.systemAdapter.extractSpells(actor);
             if (dynamicTypes && dynamicTypes.length > 0) {
-                spells = actor.items
-                    .filter((item) => dynamicTypes.includes(item.type))
-                    .map((item) => ({
-                    id: item.id,
-                    name: item.name,
-                    img: item.img,
-                    type: item.type,
-                    level: item.system?.level ?? null,
-                    school: item.system?.school ?? null,
-                    prepared: item.system?.prepared ??
-                        item.system?.preparation?.prepared ?? null,
-                    uses: item.system?.uses ? {
-                        value: item.system.uses?.value ?? null,
-                        max: item.system.uses?.max ?? null,
-                    } : null,
-                    activeEffect: this._extractTumulteEffect(item),
-                }));
-                Logger.debug('Using dynamic item categories for spell extraction', {
+                // Use adapter extraction for spells, then add non-spell dynamic types generically
+                const adapterSpellsByType = adapterSpells.filter((s) => dynamicTypes.includes(s.type));
+                // Extract additional item types not covered by the adapter (e.g. feat, power)
+                const adapterTypes = new Set(adapterSpells.map((s) => s.type));
+                const extraTypes = dynamicTypes.filter((t) => !adapterTypes.has(t) && t !== 'spell');
+                const extraItems = extraTypes.length > 0
+                    ? actor.items
+                        .filter((item) => extraTypes.includes(item.type))
+                        .map((item) => ({
+                        id: item.id,
+                        name: item.name,
+                        img: item.img || null,
+                        type: item.type,
+                        level: item.system?.level ?? null,
+                        school: null,
+                        prepared: null,
+                        uses: null,
+                    }))
+                    : [];
+                spells = [...adapterSpellsByType, ...extraItems].map((s) => {
+                    const item = actor.items.get(s.id);
+                    return { ...s, activeEffect: item ? this._extractTumulteEffect(item) : null };
+                });
+                Logger.debug('Using system adapter with dynamic item category filter', {
                     types: dynamicTypes,
-                    count: spells.length,
+                    adapterCount: adapterSpellsByType.length,
+                    extraCount: extraItems.length,
+                    totalCount: spells.length,
                 });
             }
             else {
-                spells = this.systemAdapter.extractSpells(actor);
                 // Enrich system adapter spells with Tumulte effect flags
-                spells = spells.map((s) => {
+                spells = adapterSpells.map((s) => {
                     const item = actor.items.get(s.id);
                     return { ...s, activeEffect: item ? this._extractTumulteEffect(item) : null };
                 });

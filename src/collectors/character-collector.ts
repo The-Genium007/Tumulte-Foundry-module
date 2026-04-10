@@ -264,36 +264,50 @@ export class CharacterCollector {
       const stats = this.systemAdapter!.extractStats(actor)
       const inventory = this.systemAdapter!.extractInventory(actor)
 
-      // Use dynamic item categories from Tumulte when available (supports any system),
-      // fall back to system adapter hardcoded types otherwise
+      // Always use system adapter for field extraction (handles system-specific paths
+      // like PF2e traditions vs D&D 5e schools), then filter by dynamic item categories
       const dynamicTypes = this.socket?.getTargetableItemTypes?.()
       let spells: EnrichedSpell[]
+
+      // Extract spells via system adapter (correct field mapping per game system)
+      const adapterSpells = this.systemAdapter!.extractSpells(actor)
+
       if (dynamicTypes && dynamicTypes.length > 0) {
-        spells = actor.items
-          .filter((item: FoundryItem) => dynamicTypes.includes(item.type))
-          .map((item: FoundryItem) => ({
-            id: item.id,
-            name: item.name,
-            img: item.img,
-            type: item.type,
-            level: (item.system as Record<string, unknown>)?.level as number ?? null,
-            school: (item.system as Record<string, unknown>)?.school as string ?? null,
-            prepared: (item.system as Record<string, unknown>)?.prepared as boolean ??
-              ((item.system as Record<string, unknown>)?.preparation as Record<string, unknown> | undefined)?.prepared as boolean ?? null,
-            uses: (item.system as Record<string, unknown>)?.uses ? {
-              value: ((item.system as Record<string, unknown>).uses as Record<string, unknown>)?.value as number ?? null,
-              max: ((item.system as Record<string, unknown>).uses as Record<string, unknown>)?.max as number ?? null,
-            } : null,
-            activeEffect: this._extractTumulteEffect(item),
-          }))
-        Logger.debug('Using dynamic item categories for spell extraction', {
+        // Use adapter extraction for spells, then add non-spell dynamic types generically
+        const adapterSpellsByType = adapterSpells.filter((s) => dynamicTypes.includes(s.type))
+
+        // Extract additional item types not covered by the adapter (e.g. feat, power)
+        const adapterTypes = new Set(adapterSpells.map((s) => s.type))
+        const extraTypes = dynamicTypes.filter((t) => !adapterTypes.has(t) && t !== 'spell')
+        const extraItems: ExtractedSpell[] = extraTypes.length > 0
+          ? actor.items
+              .filter((item: FoundryItem) => extraTypes.includes(item.type))
+              .map((item: FoundryItem) => ({
+                id: item.id,
+                name: item.name,
+                img: item.img || null,
+                type: item.type,
+                level: (item.system as Record<string, unknown>)?.level as number ?? null,
+                school: null,
+                prepared: null,
+                uses: null,
+              }))
+          : []
+
+        spells = [...adapterSpellsByType, ...extraItems].map((s) => {
+          const item = actor.items.get(s.id)
+          return { ...s, activeEffect: item ? this._extractTumulteEffect(item) : null }
+        })
+
+        Logger.debug('Using system adapter with dynamic item category filter', {
           types: dynamicTypes,
-          count: spells.length,
+          adapterCount: adapterSpellsByType.length,
+          extraCount: extraItems.length,
+          totalCount: spells.length,
         })
       } else {
-        spells = this.systemAdapter!.extractSpells(actor)
         // Enrich system adapter spells with Tumulte effect flags
-        spells = spells.map((s: ExtractedSpell) => {
+        spells = adapterSpells.map((s: ExtractedSpell) => {
           const item = actor.items.get(s.id)
           return { ...s, activeEffect: item ? this._extractTumulteEffect(item) : null }
         })
