@@ -1601,7 +1601,12 @@ export class TumulteSocketClient extends EventTarget {
       // Find the token on the active scene
       const token = canvas.tokens?.placeables?.find((t) => t.actor?.id === actorId)
 
-      if (effectType === 'buff') {
+      // Narrative systems use a different effect path (Clocks, Conditions, Tags, Stress boxes)
+      const narrativeSystems = ['blades-in-the-dark', 'fate-core-official', 'k4lt', 'city-of-mist']
+      const systemId = game.system?.id
+      if (systemId && narrativeSystems.includes(systemId)) {
+        await this._applyNarrativeMonsterEffect(actor, token, effect, effectType, requestId)
+      } else if (effectType === 'buff') {
         await this._applyMonsterBuff(actor, token, effect, requestId)
       } else {
         await this._applyMonsterDebuff(actor, token, effect, requestId)
@@ -1672,7 +1677,7 @@ export class TumulteSocketClient extends EventTarget {
             hp: (a.system as Record<string, Record<string, number>>)?.hp?.value ?? 0,
             hpMax: (a.system as Record<string, Record<string, number>>)?.hp?.max ?? 10,
             hpTemp: 0,
-            ac: (a.system as Record<string, Record<string, number>>)?.attribs?.armor?.value ?? null,
+            ac: (a.system as Record<string, Record<string, Record<string, number>>>)?.attribs?.armor?.value ?? null,
           }),
         }
       case 'wfrp4e':
@@ -1873,6 +1878,127 @@ export class TumulteSocketClient extends EventTarget {
           return `<em>affaibli</em> (-${effect.acPenalty ?? 2} CA, -${effect.maxHpReduction ?? 10} PV max)`
       }
     }
+  }
+
+  /**
+   * Apply monster effects for narrative systems (BitD, FATE, KULT, City of Mist).
+   * These systems don't have classic HP/AC — instead we use their native mechanics:
+   * - BitD: Create/modify Clocks (Actor type 'clock')
+   * - FATE: Modify stress tracks (actor.system.tracks array)
+   * - KULT: Toggle Conditions (actor.system.conditions)
+   * - City of Mist: Set flags for Story Tags / Statuses (interpreted by the sheet)
+   */
+  private async _applyNarrativeMonsterEffect(
+    actor: FoundryActor,
+    token: CanvasToken | undefined,
+    effect: MonsterEffectDetail,
+    effectType: string,
+    requestId: string | undefined
+  ): Promise<void> {
+    const systemId = game.system?.id
+    const highlightColor = effectType === 'buff'
+      ? (effect.highlightColor || '#10B981')
+      : (effect.highlightColor || '#EF4444')
+    const triggeredBy = effect.triggeredBy || 'le chat'
+
+    // Store the effect flag on the actor (for cleanup and sheet display)
+    await actor.setFlag(MODULE_ID, 'monsterEffect', {
+      type: effectType,
+      highlightColor,
+      requestId,
+      triggeredBy,
+      appliedAt: Date.now(),
+    })
+
+    // Apply halo
+    const haloData = { enabled: true, color: highlightColor, type: effectType }
+    await actor.setFlag(MODULE_ID, 'monsterHalo', haloData)
+    if (token) {
+      await token.document?.setFlag(MODULE_ID, 'monsterHalo', haloData)
+      requestAnimationFrame(() => token.refresh())
+    }
+
+    // System-specific effect application
+    switch (systemId) {
+      case 'blades-in-the-dark': {
+        // BitD: Create a Clock actor representing the effect
+        const clockName = effectType === 'buff'
+          ? `🛡️ ${actor.name} — Enragé`
+          : `💀 ${actor.name} — Vulnérable`
+        const clockSegments = effectType === 'buff' ? '6' : '4'
+        const clockValue = effectType === 'buff' ? 0 : 2 // Vulné = pré-rempli
+        try {
+          await Actor.create({
+            name: clockName,
+            type: 'clock' as string,
+            system: { type: clockSegments, value: clockValue },
+          })
+          Logger.info('BitD Clock created for monster effect', { clockName, effectType })
+        } catch (err) {
+          // Fallback: some BitD implementations use '🕛 clock' as actor type
+          try {
+            await Actor.create({
+              name: clockName,
+              type: '🕛 clock' as string,
+              system: { type: clockSegments, value: clockValue },
+            })
+          } catch {
+            Logger.warn('Could not create BitD Clock, effect stored as flag only', err)
+          }
+        }
+        break
+      }
+
+      case 'fate-core-official': {
+        // FATE: Modify stress tracks — add or remove a stress box
+        const tracks = (actor.system as Record<string, unknown>)?.tracks as Array<Record<string, unknown>> | undefined
+        if (tracks && Array.isArray(tracks)) {
+          const updatedTracks = tracks.map(t => {
+            if (t.type !== 'stress') return t
+            const boxes = typeof t.boxes === 'number' ? t.boxes : 3
+            if (effectType === 'buff') {
+              return { ...t, boxes: boxes + 1 } // Extra stress box = harder to take down
+            } else {
+              return { ...t, boxes: Math.max(1, boxes - 1) } // One less box = more vulnerable
+            }
+          })
+          await actor.update({ 'system.tracks': updatedTracks })
+          Logger.info('FATE stress tracks modified', { effectType })
+        }
+        break
+      }
+
+      case 'k4lt': {
+        // KULT: Toggle a Condition on the actor
+        if (effectType === 'buff') {
+          // Rage → set Angry condition
+          await actor.update({ 'system.conditions.conditionAngry.state': 'active' })
+        } else {
+          // Vulnerability → set Scared condition
+          await actor.update({ 'system.conditions.conditionScared.state': 'active' })
+        }
+        Logger.info('KULT Condition applied', { effectType, condition: effectType === 'buff' ? 'Angry' : 'Scared' })
+        break
+      }
+
+      case 'city-of-mist': {
+        // City of Mist: Store narrative effect as flags (Tags/Statuses are complex objects
+        // managed by the system's sheet — we store intent and let the sheet interpret it)
+        const tagData = effectType === 'buff'
+          ? { name: 'Enragé', type: 'positive', tier: 0 }
+          : { name: 'Vulnérable', type: 'negative', tier: 2 }
+        await actor.setFlag(MODULE_ID, 'narrativeEffect', tagData)
+        Logger.info('City of Mist narrative effect stored', { effectType, tagData })
+        break
+      }
+    }
+
+    Logger.info('Narrative monster effect applied', {
+      monsterName: actor.name,
+      systemId,
+      effectType,
+      hasToken: !!token,
+    })
   }
 
   /**

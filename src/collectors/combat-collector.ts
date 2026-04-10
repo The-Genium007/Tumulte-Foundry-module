@@ -585,6 +585,36 @@ export class CombatCollector {
       return { current: stress.max - (stress.value ?? 0), max: stress.max ?? 9, temp: 0 }
     }
 
+    // FATE Core (system.tracks — stress tracks as proxy HP)
+    const tracks = s.tracks as Array<{ type?: string; boxes?: number; box_values?: Array<number | null> }> | undefined
+    if (tracks && Array.isArray(tracks)) {
+      const stressTracks = tracks.filter(t => t.type === 'stress')
+      if (stressTracks.length > 0) {
+        let totalBoxes = 0
+        let usedBoxes = 0
+        for (const track of stressTracks) {
+          const boxes = track.boxes ?? 0
+          totalBoxes += boxes
+          if (track.box_values && Array.isArray(track.box_values)) {
+            usedBoxes += track.box_values.filter(v => v === null).length
+          }
+        }
+        return { current: totalBoxes - usedBoxes, max: totalBoxes, temp: 0 }
+      }
+    }
+
+    // City of Mist (Dangers: statuses as proxy HP — count active statuses tier)
+    const comStatuses = s.statuses as Array<{ tier?: number }> | undefined
+    if (comStatuses && Array.isArray(comStatuses)) {
+      let maxTier = 0
+      for (const st of comStatuses) {
+        if (typeof st.tier === 'number' && st.tier > maxTier) maxTier = st.tier
+      }
+      // Spectrum is typically 4-5 tiers for Dangers; use 5 as default max
+      const spectrum = (s.spectrum as number) ?? 5
+      return { current: spectrum - maxTier, max: spectrum, temp: 0 }
+    }
+
     return null
   }
 

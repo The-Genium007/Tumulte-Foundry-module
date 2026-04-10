@@ -130,6 +130,10 @@ declare class ChatMessage {
   static getSpeaker(options?: { actor?: FoundryActor }): ChatSpeaker
 }
 
+declare class Actor {
+  static create(data: Record<string, unknown>): Promise<FoundryActor>
+}
+
 // ─── Roll System ───────────────────────────────────────────────────────────────
 
 interface FoundryRoll {
