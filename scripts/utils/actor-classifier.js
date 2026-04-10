@@ -510,6 +510,16 @@ const SYSTEM_ACTOR_CONFIG = {
         classifyNpcVsMonster: null
     },
     // ============================================
+    // KULT: Divinity Lost
+    // ============================================
+    'k4lt': {
+        pcTypes: ['character'],
+        npcTypes: ['npc'],
+        monsterTypes: ['npc'],
+        excludedTypes: [],
+        classifyNpcVsMonster: null
+    },
+    // ============================================
     // Powered by the Apocalypse (Generic)
     // ============================================
     'pbta': {

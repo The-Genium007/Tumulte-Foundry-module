@@ -550,7 +550,9 @@ class TumulteIntegration {
    * from token.mesh (v11), token.texture (v12 early), or falls back to the token itself.
    */
   _renderMonsterHalo(token: CanvasToken): void {
-    const haloFlag = token.document?.getFlag(MODULE_ID, 'monsterHalo') as MonsterHaloFlag | undefined
+    // Check token flag first, then fallback to actor flag (for off-scene NPCs that get placed later)
+    const haloFlag = (token.document?.getFlag(MODULE_ID, 'monsterHalo') as MonsterHaloFlag | undefined)
+      || (token.actor?.getFlag(MODULE_ID, 'monsterHalo') as MonsterHaloFlag | undefined)
 
     // Resolve the PIXI display object that accepts filters.
     // Priority: token.mesh (v11+), then the token object itself (v12-v13 uses Token as container)

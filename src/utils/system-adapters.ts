@@ -2745,6 +2745,295 @@ class FateAdapter extends GenericAdapter {
   }
 }
 
+// ─── KULT: Divinity Lost ────────────────────────────────────────────────────
+
+/**
+ * KULT: Divinity Lost System Adapter
+ * PbtA-based: 2d10 + attribute. 15+ = crit success, ≤9 = failure, ≤4 = crit failure.
+ * No skills — uses Moves. Wounds counter (4 Serious → Critical). No AC.
+ */
+class KultAdapter extends GenericAdapter {
+  override get systemId(): string {
+    return 'k4lt'
+  }
+
+  override detectCritical(roll: ExtendedRoll): boolean {
+    const total = roll.total
+    if (total === undefined) return false
+    return total >= 15 || total <= 4
+  }
+
+  override detectCriticalType(roll: ExtendedRoll): string | null {
+    const total = roll.total
+    if (total === undefined) return null
+    if (total >= 15) return 'success'
+    if (total <= 4) return 'failure'
+    return null
+  }
+
+  override analyzeCriticality(roll: ExtendedRoll, message: RuntimeChatMessage): CriticalityResult {
+    const total = roll.total
+    if (total === undefined) return super.analyzeCriticality(roll, message)
+
+    if (total >= 15) {
+      return {
+        isCritical: true,
+        criticalType: 'success',
+        severity: 'major',
+        label: 'Full Success',
+        labelLocalized: null,
+        systemCriticalCategory: 'kult_full_success',
+        description: `Rolled ${total} — the character takes full control of the situation`,
+      }
+    }
+
+    if (total <= 4) {
+      return {
+        isCritical: true,
+        criticalType: 'failure',
+        severity: 'extreme',
+        label: 'Catastrophic Failure',
+        labelLocalized: null,
+        systemCriticalCategory: 'kult_catastrophe',
+        description: `Rolled ${total} — the GM makes a hard move with devastating consequences`,
+      }
+    }
+
+    // 5-9 = failure (GM makes a move) — not a critical but notable
+    if (total <= 9) {
+      return {
+        isCritical: true,
+        criticalType: 'failure',
+        severity: 'minor',
+        label: 'Failure',
+        labelLocalized: null,
+        systemCriticalCategory: 'kult_failure',
+        description: `Rolled ${total} — the GM makes a move`,
+      }
+    }
+
+    return super.analyzeCriticality(roll, message)
+  }
+
+  override detectRollType(_roll: ExtendedRoll, message: RuntimeChatMessage): string {
+    const flavor = (message.flavor || '').toLowerCase()
+
+    if (flavor.includes('endure harm') || flavor.includes('endurer')) return 'endure-harm'
+    if (flavor.includes('avoid harm') || flavor.includes('éviter')) return 'avoid-harm'
+    if (flavor.includes('act under pressure') || flavor.includes('pression')) return 'act-under-pressure'
+    if (flavor.includes('keep it together') || flavor.includes('garder')) return 'keep-it-together'
+    if (flavor.includes('see through') || flavor.includes('illusion')) return 'see-through-illusion'
+    if (flavor.includes('investigate') || flavor.includes('enquêter')) return 'investigate'
+
+    return super.detectRollType(_roll, message)
+  }
+
+  override extractStats(actor: FoundryActor): CharacterStats {
+    if (!actor?.system) return super.extractStats(actor)
+
+    const s = actor.system
+    return {
+      name: actor.name,
+      type: actor.type,
+      stability: sysFirstNum(s, 0, 'stability.value', 'stability'),
+      seriousWounds: sysFirstNum(s, 0, 'wounds.serious', 'seriousWounds'),
+      criticalWound: sysFirstBool(s, false, 'wounds.critical', 'criticalWound'),
+      attributes: this._extractKultAttributes(s),
+    }
+  }
+
+  private _extractKultAttributes(system: Record<string, unknown>): Record<string, number> {
+    const attrs: Record<string, number> = {}
+    const attrList = ['willpower', 'reason', 'intuition', 'charisma', 'coolness', 'violence', 'perception', 'soul', 'fortitude', 'reflexes']
+    for (const attr of attrList) {
+      attrs[attr] = sysFirstNum(system, 0, `attributes.${attr}.value`, `attributes.${attr}`)
+    }
+    return attrs
+  }
+
+  // KULT: Advantages and Capabilities are the "spells" equivalent
+  override extractSpells(actor: FoundryActor): ExtractedSpell[] {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['advantage', 'capability'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        level: null,
+        school: null,
+        prepared: null,
+        uses: null,
+      }))
+  }
+
+  override extractFeatures(actor: FoundryActor): ExtractedFeature[] {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['disadvantage', 'darkSecret', 'limitation'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        subtype: null,
+        uses: null,
+      }))
+  }
+}
+
+// ─── City of Mist / Mist Engine ─────────────────────────────────────────────
+
+/**
+ * City of Mist (Mist Engine) System Adapter
+ * 2d6 + Power (Power = sum of relevant tags). 10+ = success, 7-9 = partial, ≤6 = failure.
+ * Tags replace stats. Statuses tier 1-6 replace HP. Dangers have Spectrums.
+ */
+class CityOfMistAdapter extends GenericAdapter {
+  override get systemId(): string {
+    return 'city-of-mist'
+  }
+
+  override detectCritical(roll: ExtendedRoll): boolean {
+    const total = roll.total
+    if (total === undefined) return false
+    // 12+ = dynamite (exceptional success), ≤4 = catastrophe
+    return total >= 12 || total <= 4
+  }
+
+  override detectCriticalType(roll: ExtendedRoll): string | null {
+    const total = roll.total
+    if (total === undefined) return null
+    if (total >= 12) return 'success'
+    if (total <= 4) return 'failure'
+    return null
+  }
+
+  override analyzeCriticality(roll: ExtendedRoll, message: RuntimeChatMessage): CriticalityResult {
+    const total = roll.total
+    if (total === undefined) return super.analyzeCriticality(roll, message)
+
+    if (total >= 12) {
+      return {
+        isCritical: true,
+        criticalType: 'success',
+        severity: 'major',
+        label: 'Dynamite!',
+        labelLocalized: null,
+        systemCriticalCategory: 'mist_dynamite',
+        description: `Rolled ${total} — exceptional success with maximum narrative effect`,
+      }
+    }
+
+    if (total <= 4) {
+      return {
+        isCritical: true,
+        criticalType: 'failure',
+        severity: 'extreme',
+        label: 'Catastrophe',
+        labelLocalized: null,
+        systemCriticalCategory: 'mist_catastrophe',
+        description: `Rolled ${total} — the MC makes a devastating hard move`,
+      }
+    }
+
+    // 5-6 = failure (MC makes a move)
+    if (total <= 6) {
+      return {
+        isCritical: true,
+        criticalType: 'failure',
+        severity: 'minor',
+        label: 'Miss',
+        labelLocalized: null,
+        systemCriticalCategory: 'mist_miss',
+        description: `Rolled ${total} — the MC makes a move`,
+      }
+    }
+
+    return super.analyzeCriticality(roll, message)
+  }
+
+  override detectRollType(_roll: ExtendedRoll, message: RuntimeChatMessage): string {
+    const flavor = (message.flavor || '').toLowerCase()
+
+    if (flavor.includes('hit with all') || flavor.includes('frapper')) return 'hit-with-all'
+    if (flavor.includes('go toe to toe') || flavor.includes('corps à corps')) return 'go-toe-to-toe'
+    if (flavor.includes('face danger') || flavor.includes('danger')) return 'face-danger'
+    if (flavor.includes('change the game') || flavor.includes('changer la donne')) return 'change-the-game'
+    if (flavor.includes('investigate') || flavor.includes('enquêter')) return 'investigate'
+    if (flavor.includes('convince') || flavor.includes('convaincre')) return 'convince'
+    if (flavor.includes('sneak') || flavor.includes('furtif')) return 'sneak-around'
+    if (flavor.includes('take the risk') || flavor.includes('risque')) return 'take-the-risk'
+
+    return super.detectRollType(_roll, message)
+  }
+
+  override extractStats(actor: FoundryActor): CharacterStats {
+    if (!actor?.system) return super.extractStats(actor)
+
+    const s = actor.system
+    return {
+      name: actor.name,
+      type: actor.type,
+      // Dangers have spectrums, characters don't
+      spectrum: sys(s, 'spectrum') || null,
+      // Count active statuses and their tiers
+      activeStatuses: this._countStatuses(actor),
+    }
+  }
+
+  private _countStatuses(actor: FoundryActor): { count: number; maxTier: number } {
+    // Attempt to read statuses from actor data
+    const statuses = sys(actor.system, 'statuses') as Array<{ tier?: number }> | undefined
+    if (!statuses || !Array.isArray(statuses)) return { count: 0, maxTier: 0 }
+    let maxTier = 0
+    for (const status of statuses) {
+      if (typeof status.tier === 'number' && status.tier > maxTier) maxTier = status.tier
+    }
+    return { count: statuses.length, maxTier }
+  }
+
+  // City of Mist: no traditional spells, but Mythos themes are the power source
+  // Tags on themes act as the "spell" equivalent
+  override extractSpells(actor: FoundryActor): ExtractedSpell[] {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['tag', 'theme', 'improvement'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        level: null,
+        school: sysFirstStr(item.system, '', 'themeType', 'type') || null,
+        prepared: null,
+        uses: sysFirst(item.system, 'uses') ? {
+          value: sysFirstNum(item.system, 0, 'uses.value', 'uses.current') as number | null,
+          max: sysFirstNum(item.system, 0, 'uses.max') as number | null,
+        } : null,
+      }))
+  }
+
+  override extractFeatures(actor: FoundryActor): ExtractedFeature[] {
+    if (!actor?.items) return []
+
+    return actor.items
+      .filter(item => ['move', 'status'].includes(item.type))
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        img: item.img || null,
+        type: item.type,
+        subtype: sysFirstStr(item.system, '', 'moveType', 'category') || null,
+        uses: null,
+      }))
+  }
+}
+
 // ─── Adapter Registry & Factory ──────────────────────────────────────────────
 
 /** Map of system IDs to adapter constructors */
@@ -2761,7 +3050,6 @@ const ADAPTER_REGISTRY: Record<string, AdapterConstructor> = {
   'forbidden-lands': ForbiddenLandsAdapter,
   'vaesen': VaesenAdapter,
   'blades-in-the-dark': BladesInTheDarkAdapter,
-  // NEW — Criticality V2
   'vtm5e': Vtm5eAdapter,
   'wod5e': Vtm5eAdapter,
   'shadowrun5e': ShadowrunAdapter,
@@ -2769,6 +3057,9 @@ const ADAPTER_REGISTRY: Record<string, AdapterConstructor> = {
   'starwarsffg': StarWarsFFGAdapter,
   'genesys': StarWarsFFGAdapter,
   'fate-core-official': FateAdapter,
+  // v2.4.0 — Tier 1 expansion
+  'k4lt': KultAdapter,
+  'city-of-mist': CityOfMistAdapter,
 }
 
 /**
@@ -2800,4 +3091,6 @@ export {
   ShadowrunAdapter,
   StarWarsFFGAdapter,
   FateAdapter,
+  KultAdapter,
+  CityOfMistAdapter,
 }

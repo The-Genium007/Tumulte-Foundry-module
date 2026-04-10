@@ -1607,13 +1607,11 @@ export class TumulteSocketClient extends EventTarget {
         await this._applyMonsterDebuff(actor, token, effect, requestId)
       }
 
-      // Send Foundry chat message
+      // Send Foundry chat message with system-aware labels
       const img = monsterImg || actor.img || ''
       const triggeredBy = effect.triggeredBy || 'le chat'
       const cssClass = effectType === 'buff' ? 'tumulte-monster-buff' : 'tumulte-monster-debuff'
-      const effectLabel = effectType === 'buff'
-        ? `<em>renforcé</em> (+${effect.acBonus ?? 2} CA, +${effect.tempHp ?? 10} PV temp)`
-        : `<em>affaibli</em> (-${effect.acPenalty ?? 2} CA, -${effect.maxHpReduction ?? 10} PV max)`
+      const effectLabel = this._getMonsterEffectLabel(effectType, effect)
 
       await ChatMessage.create({
         content: `
@@ -1669,24 +1667,43 @@ export class TumulteSocketClient extends EventTarget {
       case 'CoC7':
         return {
           hp: { value: 'system.hp.value', max: 'system.hp.max', temp: null },
-          ac: { value: null },
+          ac: { value: 'system.attribs.armor.value' },
           read: (a) => ({
             hp: (a.system as Record<string, Record<string, number>>)?.hp?.value ?? 0,
             hpMax: (a.system as Record<string, Record<string, number>>)?.hp?.max ?? 10,
             hpTemp: 0,
-            ac: null,
+            ac: (a.system as Record<string, Record<string, number>>)?.attribs?.armor?.value ?? null,
           }),
         }
       case 'wfrp4e':
         return {
           hp: { value: 'system.status.wounds.value', max: 'system.status.wounds.max', temp: null },
-          ac: { value: null },
-          read: (a) => ({
-            hp: (a.system as Record<string, Record<string, Record<string, number>>>)?.status?.wounds?.value ?? 0,
-            hpMax: (a.system as Record<string, Record<string, Record<string, number>>>)?.status?.wounds?.max ?? 10,
-            hpTemp: 0,
-            ac: null,
-          }),
+          ac: { value: 'system.status.armour.value' },
+          read: (a) => {
+            const sys = a.system as Record<string, unknown>
+            const status = sys?.status as Record<string, unknown> | undefined
+            const wounds = status?.wounds as Record<string, number> | undefined
+            // Calculate average armour across body zones if available
+            const armourObj = status?.armour as Record<string, unknown> | undefined
+            let avgArmour: number | null = null
+            if (armourObj) {
+              // WFRP4e stores armour per zone: head, body, lArm, rArm, lLeg, rLeg
+              const zones = ['head', 'body', 'lArm', 'rArm', 'lLeg', 'rLeg']
+              let total = 0
+              let count = 0
+              for (const zone of zones) {
+                const zoneVal = armourObj[zone] as number | undefined
+                if (typeof zoneVal === 'number') { total += zoneVal; count++ }
+              }
+              if (count > 0) avgArmour = Math.round(total / count)
+            }
+            return {
+              hp: wounds?.value ?? 0,
+              hpMax: wounds?.max ?? 10,
+              hpTemp: 0,
+              ac: avgArmour,
+            }
+          },
         }
       case 'swade':
         return {
@@ -1713,12 +1730,12 @@ export class TumulteSocketClient extends EventTarget {
       case 'alienrpg':
         return {
           hp: { value: 'system.header.health.value', max: 'system.header.health.max', temp: null },
-          ac: { value: null },
+          ac: { value: 'system.header.armor.value' },
           read: (a) => ({
             hp: (a.system as Record<string, Record<string, Record<string, number>>>)?.header?.health?.value ?? 0,
             hpMax: (a.system as Record<string, Record<string, Record<string, number>>>)?.header?.health?.max ?? 10,
             hpTemp: 0,
-            ac: null,
+            ac: (a.system as Record<string, Record<string, Record<string, number>>>)?.header?.armor?.value ?? null,
           }),
         }
       case 'starwarsffg':
@@ -1767,6 +1784,18 @@ export class TumulteSocketClient extends EventTarget {
             ac: null,
           }),
         }
+      case 'vtm5e':
+      case 'wod5e':
+        return {
+          hp: { value: 'system.health.value', max: 'system.health.max', temp: null },
+          ac: { value: 'system.willpower.max' },
+          read: (a) => ({
+            hp: (a.system as Record<string, Record<string, number>>)?.health?.value ?? 0,
+            hpMax: (a.system as Record<string, Record<string, number>>)?.health?.max ?? 10,
+            hpTemp: 0,
+            ac: (a.system as Record<string, Record<string, number>>)?.willpower?.max ?? null,
+          }),
+        }
       default:
         return {
           hp: { value: 'system.attributes.hp.value', max: 'system.attributes.hp.max', temp: 'system.attributes.hp.temp' },
@@ -1778,6 +1807,71 @@ export class TumulteSocketClient extends EventTarget {
             ac: (a.system as Record<string, Record<string, Record<string, number>>>)?.attributes?.ac?.value ?? 10,
           }),
         }
+    }
+  }
+
+  /**
+   * Generate a system-aware label for monster effect chat messages.
+   * Adapts terminology to each system (CA/PV for D&D, Toughness for SWADE, etc.)
+   */
+  private _getMonsterEffectLabel(effectType: string, effect: MonsterEffectDetail): string {
+    const systemId = game.system?.id
+    if (effectType === 'buff') {
+      switch (systemId) {
+        case 'k4lt':
+          return '<em>renforcé</em> (Condition : Angry)'
+        case 'city-of-mist':
+          return '<em>renforcé</em> (Story Tag positif ajouté)'
+        case 'blades-in-the-dark':
+          return '<em>renforcé</em> (Clock de résistance créé)'
+        case 'fate-core-official':
+          return '<em>renforcé</em> (Stress box supplémentaire)'
+        case 'swade':
+          return `<em>renforcé</em> (+${effect.acBonus ?? 2} Toughness, +${effect.tempHp ?? 1} Wound max)`
+        case 'wfrp4e':
+          return `<em>renforcé</em> (+Armure, +${effect.tempHp ?? 5} Wounds max)`
+        case 'CoC7':
+          return `<em>renforcé</em> (+${effect.acBonus ?? 2} Armure, +${effect.tempHp ?? 5} HP max)`
+        case 'vtm5e':
+        case 'wod5e':
+          return `<em>renforcé</em> (+${effect.tempHp ?? 2} Health max)`
+        case 'starwarsffg':
+        case 'genesys':
+          return `<em>renforcé</em> (+${effect.acBonus ?? 1} Soak, +${effect.tempHp ?? 5} Wounds max)`
+        case 'shadowrun5e':
+        case 'shadowrun6-eden':
+          return `<em>renforcé</em> (+${effect.acBonus ?? 2} Armor, +${effect.tempHp ?? 5} Physical max)`
+        default:
+          return `<em>renforcé</em> (+${effect.acBonus ?? 2} CA, +${effect.tempHp ?? 10} PV temp)`
+      }
+    } else {
+      switch (systemId) {
+        case 'k4lt':
+          return '<em>affaibli</em> (Condition : Afraid)'
+        case 'city-of-mist':
+          return '<em>affaibli</em> (Story Tag négatif + Statut imposé)'
+        case 'blades-in-the-dark':
+          return '<em>affaibli</em> (Clock de faiblesse pré-rempli)'
+        case 'fate-core-official':
+          return '<em>affaibli</em> (Stress box retirée)'
+        case 'swade':
+          return `<em>affaibli</em> (-${effect.acPenalty ?? 2} Toughness, -${effect.maxHpReduction ?? 1} Wound max)`
+        case 'wfrp4e':
+          return `<em>affaibli</em> (-Armure, -${effect.maxHpReduction ?? 5} Wounds max)`
+        case 'CoC7':
+          return `<em>affaibli</em> (-${effect.acPenalty ?? 2} Armure, -${effect.maxHpReduction ?? 5} HP max)`
+        case 'vtm5e':
+        case 'wod5e':
+          return `<em>affaibli</em> (-${effect.maxHpReduction ?? 2} Health max)`
+        case 'starwarsffg':
+        case 'genesys':
+          return `<em>affaibli</em> (-${effect.acPenalty ?? 1} Soak, -${effect.maxHpReduction ?? 5} Wounds max)`
+        case 'shadowrun5e':
+        case 'shadowrun6-eden':
+          return `<em>affaibli</em> (-${effect.acPenalty ?? 2} Armor, -${effect.maxHpReduction ?? 5} Physical max)`
+        default:
+          return `<em>affaibli</em> (-${effect.acPenalty ?? 2} CA, -${effect.maxHpReduction ?? 10} PV max)`
+      }
     }
   }
 
@@ -1819,15 +1913,13 @@ export class TumulteSocketClient extends EventTarget {
     }
     await actor.update(updates)
 
-    // Apply token halo flag for visual rendering.
-    // The updateToken hook may pick this up, but we also manually refresh via requestAnimationFrame
-    // to ensure the glow is applied even if the hook doesn't fire (e.g. off-canvas tokens).
+    // Apply halo flag for visual rendering.
+    // Store on token if available, and ALWAYS on actor as fallback for off-scene NPCs.
+    // The halo will apply automatically when the token is placed on a scene later (via drawToken hook).
+    const haloData = { enabled: true, color: highlightColor, type: 'buff' as const }
+    await actor.setFlag(MODULE_ID, 'monsterHalo', haloData)
     if (token) {
-      await token.document?.setFlag(MODULE_ID, 'monsterHalo', {
-        enabled: true,
-        color: highlightColor,
-        type: 'buff',
-      })
+      await token.document?.setFlag(MODULE_ID, 'monsterHalo', haloData)
       requestAnimationFrame(() => token.refresh())
     }
 
@@ -1837,6 +1929,7 @@ export class TumulteSocketClient extends EventTarget {
       tempHp,
       originalAc: stats.ac,
       systemId: game.system?.id,
+      hasToken: !!token,
     })
   }
 
@@ -1880,15 +1973,11 @@ export class TumulteSocketClient extends EventTarget {
     }
     await actor.update(updates)
 
-    // Apply token halo flag for visual rendering.
-    // The updateToken hook may pick this up, but we also manually refresh via requestAnimationFrame
-    // to ensure the glow is applied even if the hook doesn't fire (e.g. off-canvas tokens).
+    // Apply halo flag — on actor (always) + token (if available)
+    const haloData = { enabled: true, color: highlightColor, type: 'debuff' as const }
+    await actor.setFlag(MODULE_ID, 'monsterHalo', haloData)
     if (token) {
-      await token.document?.setFlag(MODULE_ID, 'monsterHalo', {
-        enabled: true,
-        color: highlightColor,
-        type: 'debuff',
-      })
+      await token.document?.setFlag(MODULE_ID, 'monsterHalo', haloData)
       requestAnimationFrame(() => token.refresh())
     }
 

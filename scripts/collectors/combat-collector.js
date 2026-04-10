@@ -386,6 +386,21 @@ export class CombatCollector {
         if (condPhysical) {
             return { current: condPhysical.value ?? 0, max: condPhysical.max ?? 0, temp: 0 };
         }
+        // VtM5e / WoD5e (system.health)
+        const vtmHealth = s.health;
+        if (vtmHealth?.value !== undefined) {
+            return { current: vtmHealth.value ?? 0, max: vtmHealth.max ?? 0, temp: 0 };
+        }
+        // KULT (system.wounds — serious wounds counter, max 4 before critical)
+        const kultWounds = s.wounds;
+        if (kultWounds?.serious !== undefined) {
+            return { current: 4 - (kultWounds.serious ?? 0), max: 4, temp: 0 };
+        }
+        // Blades in the Dark (system.stress — proxy HP)
+        const stress = s.stress;
+        if (stress?.value !== undefined && stress?.max !== undefined) {
+            return { current: stress.max - (stress.value ?? 0), max: stress.max ?? 9, temp: 0 };
+        }
         return null;
     }
     /**
