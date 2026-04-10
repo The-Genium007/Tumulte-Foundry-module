@@ -1,6 +1,6 @@
 /**
  * Minimal Foundry VTT type declarations for the Tumulte module.
- * Covers Foundry v11-v13 APIs used by this module.
+ * Covers Foundry v12-v14 APIs used by this module.
  */
 
 // ─── Core Globals ──────────────────────────────────────────────────────────────
@@ -140,6 +140,9 @@ interface FoundryRoll {
   result: string
   options?: Record<string, unknown>
   _evaluated: boolean
+  // v14+ / system-specific enrichment
+  isCritical?: boolean
+  degreeOfSuccess?: number
 }
 
 interface FoundryDiceTerm {

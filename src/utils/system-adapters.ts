@@ -338,28 +338,60 @@ class GenericAdapter {
    * Subclasses override this for system-specific enrichment.
    */
   analyzeCriticality(roll: ExtendedRoll, _message: RuntimeChatMessage): CriticalityResult {
+    // 1. System-specific detection (d20 nat 1/20 for generic)
     const isCritical = this.detectCritical(roll)
     const criticalType = this.detectCriticalType(roll)
 
-    if (!isCritical) {
+    if (isCritical) {
       return {
-        isCritical: false,
-        criticalType: null,
-        severity: null,
-        label: null,
+        isCritical: true,
+        criticalType,
+        severity: 'major',
+        label: criticalType === 'success' ? 'Critical Success' : 'Critical Failure',
         labelLocalized: null,
-        systemCriticalCategory: null,
+        systemCriticalCategory: criticalType === 'success' ? 'generic_success' : 'generic_failure',
         description: null,
       }
     }
 
+    // 2. Raw dice fallback: scan ALL die terms for max/min results.
+    //    This ensures detection even if system hooks fail or APIs change.
+    //    Uses severity 'minor' to distinguish from system-confirmed criticals.
+    for (const term of roll.terms || []) {
+      if (!term.faces || !term.results || term.faces < 4) continue
+      for (const result of term.results) {
+        if (result.result === term.faces) {
+          return {
+            isCritical: true,
+            criticalType: 'success',
+            severity: 'minor',
+            label: `Natural ${result.result}`,
+            labelLocalized: null,
+            systemCriticalCategory: 'raw_max',
+            description: `Rolled max value (${result.result}) on d${term.faces}`,
+          }
+        }
+        if (result.result === 1) {
+          return {
+            isCritical: true,
+            criticalType: 'failure',
+            severity: 'minor',
+            label: 'Natural 1',
+            labelLocalized: null,
+            systemCriticalCategory: 'raw_min',
+            description: `Rolled 1 on d${term.faces}`,
+          }
+        }
+      }
+    }
+
     return {
-      isCritical: true,
-      criticalType,
-      severity: 'major',
-      label: criticalType === 'success' ? 'Critical Success' : 'Critical Failure',
+      isCritical: false,
+      criticalType: null,
+      severity: null,
+      label: null,
       labelLocalized: null,
-      systemCriticalCategory: criticalType === 'success' ? 'generic_success' : 'generic_failure',
+      systemCriticalCategory: null,
       description: null,
     }
   }
@@ -520,6 +552,54 @@ function sysBool(obj: Record<string, unknown> | undefined, path: string, fallbac
   return typeof v === 'boolean' ? v : fallback
 }
 
+// ─── Multi-path fallback helpers (v14 hardening) ────────────────────────────
+
+/** Try multiple paths in order, returning the first non-undefined value */
+function sysFirst(obj: Record<string, unknown> | undefined, ...paths: string[]): unknown {
+  for (const path of paths) {
+    const v = sys(obj, path)
+    if (v !== undefined) return v
+  }
+  return undefined
+}
+
+/** Try multiple paths, return first valid string */
+function sysFirstStr(obj: Record<string, unknown> | undefined, fallback: string, ...paths: string[]): string {
+  for (const path of paths) {
+    const v = sys(obj, path)
+    if (typeof v === 'string' && v.length > 0) return v
+  }
+  return fallback
+}
+
+/** Try multiple paths, return first valid number */
+function sysFirstNum(obj: Record<string, unknown> | undefined, fallback: number, ...paths: string[]): number {
+  for (const path of paths) {
+    const v = sys(obj, path)
+    if (typeof v === 'number') return v
+  }
+  return fallback
+}
+
+/** Try multiple paths, return first valid boolean */
+function sysFirstBool(obj: Record<string, unknown> | undefined, fallback: boolean, ...paths: string[]): boolean {
+  for (const path of paths) {
+    const v = sys(obj, path)
+    if (typeof v === 'boolean') return v
+  }
+  return fallback
+}
+
+// ─── System version detection ───────────────────────────────────────────────
+
+/** Parse the current game system version into { id, major, minor, patch } */
+function getSystemVersion(): { id: string; major: number; minor: number; patch: number } {
+  const id = game?.system?.id ?? ''
+  const version = game?.system?.version ?? '0.0.0'
+  const parts = version.split('.').map(Number)
+  return { id, major: parts[0] ?? 0, minor: parts[1] ?? 0, patch: parts[2] ?? 0 }
+}
+
 // ─── D&D 5e ──────────────────────────────────────────────────────────────────
 
 /**
@@ -531,7 +611,13 @@ class Dnd5eAdapter extends GenericAdapter {
   }
 
   override detectCritical(roll: ExtendedRoll): boolean {
-    // D&D 5e has specific critical detection via options
+    // dnd5e may set isCritical directly on the roll (some versions)
+    if (roll.options?.isCritical === true) return true
+    // dnd5e flags-based detection (v5.x+)
+    const dnd5eFlags = roll.options?.flags as Record<string, unknown> | undefined
+    const dnd5eOpts = dnd5eFlags?.['dnd5e'] as Record<string, unknown> | undefined
+    if (dnd5eOpts?.isCritical === true) return true
+    // D&D 5e threshold-based critical detection via options.critical
     if (roll.options?.critical !== undefined) {
       const d20Result = this.getD20Result(roll)
       return d20Result !== null && (d20Result >= (roll.options.critical as number) || d20Result === 1)
@@ -603,9 +689,9 @@ class Dnd5eAdapter extends GenericAdapter {
         temp: sysNum(system, 'attributes.hp.temp')
       },
       ac: sysNum(system, 'attributes.ac.value'),
-      level: sysNum(system, 'details.level'),
-      class: sysStr(system, 'details.class'),
-      race: sysStr(system, 'details.race'),
+      level: sysFirstNum(system, 0, 'details.level', 'details.level.value'),
+      class: sysFirstStr(system, '', 'details.class.name', 'details.class'),
+      race: sysFirstStr(system, '', 'details.species.name', 'details.species', 'details.race.name', 'details.race'),
       abilities: this.extractAbilities(system),
       proficiencyBonus: sysNum(system, 'attributes.prof')
     }
@@ -637,7 +723,7 @@ class Dnd5eAdapter extends GenericAdapter {
         name: item.name,
         type: item.type,
         quantity: sysNum(item.system, 'quantity', 1),
-        equipped: sysBool(item.system, 'equipped'),
+        equipped: sysFirstBool(item.system, false, 'equipped', 'equipped.value', 'isEquipped'),
         img: item.img
       }))
   }
@@ -647,19 +733,35 @@ class Dnd5eAdapter extends GenericAdapter {
 
     return actor.items
       .filter(item => item.type === 'spell')
-      .map(item => ({
-        id: item.id,
-        name: item.name,
-        img: item.img || null,
-        type: 'spell',
-        level: sys(item.system, 'level') as number ?? null,
-        school: sysStr(item.system, 'school') || null,
-        prepared: sys(item.system, 'preparation.prepared') as boolean ?? null,
-        uses: sys(item.system, 'uses') ? {
-          value: sys(item.system, 'uses.value') as number ?? null,
-          max: sys(item.system, 'uses.max') as number ?? null,
-        } : null,
-      }))
+      .map(item => {
+        const s = item.system
+        // Level: stable across dnd5e versions
+        const level = sys(s, 'level')
+        const levelNum = typeof level === 'number' ? level : null
+        // School: v5.x uses 'school' (string), v4.x used 'school.value'
+        const school = sysFirstStr(s, '', 'school', 'school.value') || null
+        // Preparation: v5.1+ uses 'prepared', v4.x uses 'preparation.prepared'
+        const prepared = sysFirst(s, 'prepared', 'preparation.prepared')
+        const preparedBool = typeof prepared === 'boolean' ? prepared : null
+        // Uses: v5.x may restructure; try 'uses.value' then 'uses.spent'
+        const usesValue = sysFirst(s, 'uses.value', 'uses.spent')
+        const usesMax = sys(s, 'uses.max')
+        const hasUses = usesValue !== undefined || usesMax !== undefined
+
+        return {
+          id: item.id,
+          name: item.name,
+          img: item.img || null,
+          type: 'spell',
+          level: levelNum,
+          school,
+          prepared: preparedBool,
+          uses: hasUses ? {
+            value: typeof usesValue === 'number' ? usesValue : null,
+            max: typeof usesMax === 'number' ? usesMax : null,
+          } : null,
+        }
+      })
   }
 
   override extractFeatures(actor: FoundryActor): ExtractedFeature[] {
@@ -667,18 +769,28 @@ class Dnd5eAdapter extends GenericAdapter {
 
     return actor.items
       .filter(item => item.type === 'feat')
-      .map(item => ({
-        id: item.id,
-        name: item.name,
-        img: item.img || null,
-        type: 'feat',
-        subtype: sysStr(item.system, 'type.value') || null,
-        uses: sys(item.system, 'uses.max') ? {
-          value: sys(item.system, 'uses.value') as number ?? null,
-          max: sys(item.system, 'uses.max') as number ?? null,
-          per: sysStr(item.system, 'uses.per') || null,
-        } : null,
-      }))
+      .map(item => {
+        const s = item.system
+        // Subtype: v5.x uses 'type.value', fallback to 'type.subtype', 'subtype'
+        const subtype = sysFirstStr(s, '', 'type.value', 'type.subtype', 'subtype') || null
+        // Uses: v5.x may restructure uses.per to uses.recovery.period
+        const usesMax = sysFirst(s, 'uses.max')
+        const usesValue = sysFirst(s, 'uses.value', 'uses.spent')
+        const usesPer = sysFirstStr(s, '', 'uses.per', 'uses.recovery.period') || null
+
+        return {
+          id: item.id,
+          name: item.name,
+          img: item.img || null,
+          type: 'feat',
+          subtype,
+          uses: usesMax != null ? {
+            value: typeof usesValue === 'number' ? usesValue : null,
+            max: typeof usesMax === 'number' ? usesMax : null,
+            per: usesPer,
+          } : null,
+        }
+      })
   }
 }
 
@@ -692,24 +804,34 @@ class Pf2eAdapter extends GenericAdapter {
     return 'pf2e'
   }
 
+  /** Resolve PF2e degree of success from roll or options fallback */
+  private _getDegreeOfSuccess(roll: ExtendedRoll): number | undefined {
+    if (roll.degreeOfSuccess !== undefined) return roll.degreeOfSuccess
+    const optDegree = roll.options?.degreeOfSuccess as number | undefined
+    if (optDegree !== undefined) return optDegree
+    return undefined
+  }
+
   override detectCritical(roll: ExtendedRoll): boolean {
-    // PF2e uses degree of success
-    if (roll.degreeOfSuccess !== undefined) {
-      return roll.degreeOfSuccess === 3 || roll.degreeOfSuccess === 0
+    const degree = this._getDegreeOfSuccess(roll)
+    if (degree !== undefined) {
+      return degree === 3 || degree === 0
     }
     return super.detectCritical(roll)
   }
 
   override detectCriticalType(roll: ExtendedRoll): string | null {
-    if (roll.degreeOfSuccess === 3) return 'success'
-    if (roll.degreeOfSuccess === 0) return 'failure'
+    const degree = this._getDegreeOfSuccess(roll)
+    if (degree === 3) return 'success'
+    if (degree === 0) return 'failure'
     return super.detectCriticalType(roll)
   }
 
   override analyzeCriticality(roll: ExtendedRoll, message: RuntimeChatMessage): CriticalityResult {
-    if (roll.degreeOfSuccess === undefined) return super.analyzeCriticality(roll, message)
+    const degree = this._getDegreeOfSuccess(roll)
+    if (degree === undefined) return super.analyzeCriticality(roll, message)
 
-    if (roll.degreeOfSuccess === 3) {
+    if (degree === 3) {
       return {
         isCritical: true,
         criticalType: 'success',
@@ -721,7 +843,7 @@ class Pf2eAdapter extends GenericAdapter {
       }
     }
 
-    if (roll.degreeOfSuccess === 0) {
+    if (degree === 0) {
       return {
         isCritical: true,
         criticalType: 'failure',
@@ -749,9 +871,10 @@ class Pf2eAdapter extends GenericAdapter {
         temp: sysNum(system, 'attributes.hp.temp')
       },
       ac: sysNum(system, 'attributes.ac.value'),
-      level: sysNum(system, 'details.level.value'),
-      ancestry: sysStr(system, 'details.ancestry.name'),
-      class: sysStr(system, 'details.class.name')
+      level: sysFirstNum(system, 0, 'details.level.value', 'details.level'),
+      ancestry: sysFirstStr(system, '', 'details.ancestry.name', 'details.ancestry'),
+      heritage: sysFirstStr(system, '', 'details.heritage.name', 'details.heritage'),
+      class: sysFirstStr(system, '', 'details.class.name', 'details.class')
     }
   }
 
@@ -760,19 +883,35 @@ class Pf2eAdapter extends GenericAdapter {
 
     return actor.items
       .filter(item => item.type === 'spell')
-      .map(item => ({
-        id: item.id,
-        name: item.name,
-        img: item.img || null,
-        type: 'spell',
-        level: (sys(item.system, 'level.value') ?? sys(item.system, 'level')) as number ?? null,
-        school: (sys(item.system, 'traditions.value') as string[] | undefined)?.[0] || null,
-        prepared: sys(item.system, 'location.signature') as boolean ?? null,
-        uses: sys(item.system, 'location.uses') ? {
-          value: sys(item.system, 'location.uses.value') as number ?? null,
-          max: sys(item.system, 'location.uses.max') as number ?? null,
-        } : null,
-      }))
+      .map(item => {
+        const s = item.system
+        // Level: PF2e Remaster uses 'rank', classic uses 'level.value'
+        const level = sysFirst(s, 'level.value', 'rank', 'level')
+        const levelVal = typeof level === 'number' ? level : null
+        // School/Tradition: 'traditions.value' (array) or 'traits.traditions' (Remaster)
+        const traditions = sysFirst(s, 'traditions.value', 'traits.traditions') as string[] | undefined
+        const school = traditions?.[0] || null
+        // Prepared: 'location.signature' or 'signature'
+        const prepared = sysFirst(s, 'location.signature', 'signature')
+        const preparedBool = typeof prepared === 'boolean' ? prepared : null
+        // Uses: 'location.uses' or 'uses'
+        const usesObj = sysFirst(s, 'location.uses', 'uses') as Record<string, unknown> | undefined
+        const hasUses = usesObj != null && typeof usesObj === 'object'
+
+        return {
+          id: item.id,
+          name: item.name,
+          img: item.img || null,
+          type: 'spell',
+          level: levelVal,
+          school,
+          prepared: preparedBool,
+          uses: hasUses ? {
+            value: typeof usesObj.value === 'number' ? usesObj.value : null,
+            max: typeof usesObj.max === 'number' ? usesObj.max : null,
+          } : null,
+        }
+      })
   }
 
   override extractFeatures(actor: FoundryActor): ExtractedFeature[] {
@@ -780,18 +919,27 @@ class Pf2eAdapter extends GenericAdapter {
 
     return actor.items
       .filter(item => ['feat', 'action'].includes(item.type))
-      .map(item => ({
-        id: item.id,
-        name: item.name,
-        img: item.img || null,
-        type: item.type,
-        subtype: (sysStr(item.system, 'category') || sysStr(item.system, 'actionType.value')) || null,
-        uses: sys(item.system, 'frequency') ? {
-          value: sys(item.system, 'frequency.value') as number ?? null,
-          max: sys(item.system, 'frequency.max') as number ?? null,
-          per: sysStr(item.system, 'frequency.per') || null,
-        } : null,
-      }))
+      .map(item => {
+        const s = item.system
+        // Subtype: try 'category', 'actionType.value'
+        const subtype = sysFirstStr(s, '', 'category', 'actionType.value') || null
+        // Frequency: PF2e uses 'frequency' or 'uses'
+        const freq = sysFirst(s, 'frequency', 'uses') as Record<string, unknown> | undefined
+        const hasFreq = freq != null && typeof freq === 'object'
+
+        return {
+          id: item.id,
+          name: item.name,
+          img: item.img || null,
+          type: item.type,
+          subtype,
+          uses: hasFreq ? {
+            value: typeof freq.value === 'number' ? freq.value : null,
+            max: typeof freq.max === 'number' ? freq.max : null,
+            per: typeof freq.per === 'string' ? freq.per : null,
+          } : null,
+        }
+      })
   }
 }
 
@@ -1370,7 +1518,7 @@ class CyberpunkRedAdapter extends GenericAdapter {
         type: 'program',
         level: sysStr(item.system, 'class') || null,
         school: null,
-        prepared: sys(item.system, 'equipped') as boolean ?? null,
+        prepared: sysFirstBool(item.system, false, 'equipped', 'equipped.value', 'isEquipped') || null,
         uses: null,
       }))
   }

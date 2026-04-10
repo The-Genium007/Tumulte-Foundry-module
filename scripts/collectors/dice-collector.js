@@ -56,23 +56,38 @@ export class DiceCollector {
         const systemId = game.system.id;
         switch (systemId) {
             case 'dnd5e':
-                // D&D 5e specific hooks
-                Hooks.on('dnd5e.rollAttack', (...args) => {
-                    const item = args[0];
-                    Logger.debug('D&D 5e attack roll detected', { item: item?.name });
-                });
-                Hooks.on('dnd5e.rollDamage', (...args) => {
-                    const item = args[0];
-                    Logger.debug('D&D 5e damage roll detected', { item: item?.name });
-                });
+                // D&D 5e specific hooks (wrapped in try/catch for v14+ resilience)
+                try {
+                    Hooks.on('dnd5e.rollAttack', (...args) => {
+                        const item = args[0];
+                        Logger.debug('D&D 5e attack roll detected', { item: item?.name });
+                    });
+                }
+                catch (err) {
+                    Logger.warn('Failed to register dnd5e.rollAttack hook', err);
+                }
+                try {
+                    Hooks.on('dnd5e.rollDamage', (...args) => {
+                        const item = args[0];
+                        Logger.debug('D&D 5e damage roll detected', { item: item?.name });
+                    });
+                }
+                catch (err) {
+                    Logger.warn('Failed to register dnd5e.rollDamage hook', err);
+                }
                 break;
             case 'pf2e':
                 // Pathfinder 2e specific hooks
-                Hooks.on('pf2e.rollCheck', (...args) => {
-                    const actor = args[0];
-                    const type = args[2];
-                    Logger.debug('PF2e check roll detected', { actor: actor?.name, type });
-                });
+                try {
+                    Hooks.on('pf2e.rollCheck', (...args) => {
+                        const actor = args[0];
+                        const type = args[2];
+                        Logger.debug('PF2e check roll detected', { actor: actor?.name, type });
+                    });
+                }
+                catch (err) {
+                    Logger.warn('Failed to register pf2e.rollCheck hook', err);
+                }
                 break;
         }
     }

@@ -24,13 +24,14 @@ const DISABLED_FLAG_KEY = 'disabled';
  * Aligned with system-adapters.ts extractSpells() implementations.
  */
 const SPELL_ITEM_TYPES = {
+    // --- Systems with dedicated adapters ---
     'dnd5e': ['spell'],
     'pf2e': ['spell'],
     'CoC7': ['spell'],
     'wfrp4e': ['spell', 'prayer'],
     'swade': ['power'],
     'cyberpunk-red-core': ['program'],
-    'alienrpg': [], // no spell-like items
+    'alienrpg': [],
     'forbidden-lands': ['spell'],
     'vaesen': ['spell', 'ritual'],
     'blades-in-the-dark': ['ghost', 'ritual'],
@@ -41,6 +42,21 @@ const SPELL_ITEM_TYPES = {
     'starwarsffg': ['forcepower', 'power'],
     'genesys': ['forcepower', 'power'],
     'fate-core-official': ['power', 'extra'],
+    // --- Additional systems (v14 hardening) ---
+    'a5e': ['spell'],
+    'ose': ['spell'],
+    'sfrpg': ['spell'],
+    'dark-heresy': ['psychicPower'],
+    'wrath-and-glory': ['psychicPower', 'spell'],
+    'demonlord': ['spell'],
+    'dungeonworld': ['spell'],
+    'dragonbane': ['spell'],
+    'mausritter': ['spell'],
+    'archmage': ['spell', 'power'],
+    'cyphersystem': ['ability'],
+    'mta': ['spell'],
+    'tor2e': ['spell'],
+    'mothership': ['spell'],
 };
 /** Systems that have native pre-roll hook support */
 const PRE_ROLL_SYSTEMS = ['dnd5e', 'pf2e', 'wfrp4e'];
@@ -76,8 +92,9 @@ export class SpellEffectCollector {
      * 1. System-specific pre-roll hooks for systems that support them (dnd5e, pf2e, wfrp4e)
      * 2. Universal createChatMessage hook for ALL non-dnd5e systems (consumption + annotation)
      *
-     * dnd5e is excluded from the universal hook because it handles everything
-     * via its own pre-roll + post-use activity hooks.
+     * Universal chat hook is now registered for ALL systems as a safety net.
+     * For dnd5e, system hooks handle pre-roll modification; the universal hook
+     * acts as fallback for consumption if system hooks fail.
      */
     registerHooks() {
         // 1. Register system-specific pre-roll hooks (if available)
@@ -92,11 +109,8 @@ export class SpellEffectCollector {
                 this.registerWfrp4eHooks();
                 break;
         }
-        // 2. Register universal chat intercept for ALL non-dnd5e systems
-        // dnd5e handles everything via preRollAttack + postUseActivity
-        if (this.systemId !== 'dnd5e') {
-            this.registerUniversalChatHooks();
-        }
+        // 2. Register universal chat intercept for ALL systems as safety net
+        this.registerUniversalChatHooks();
         // 3. Log what was registered
         const hasPreRoll = PRE_ROLL_SYSTEMS.includes(this.systemId);
         Logger.info('Spell Effect Collector hooks registered', {
@@ -113,9 +127,17 @@ export class SpellEffectCollector {
         const major = parseInt(dnd5eVersion.split('.')[0], 10);
         if (major >= 5) {
             this._registerDnd5eV5Hooks();
+            // Also try v4 hooks as fallback (try/catch in case they're removed in v5.3+)
+            try {
+                this._registerDnd5eV4Hooks();
+            }
+            catch { /* v4 hooks removed, fine */ }
+        }
+        else if (major >= 4) {
+            this._registerDnd5eV4Hooks();
         }
         else {
-            this._registerDnd5eV4Hooks();
+            Logger.warn('dnd5e version too old for system-specific hooks, using universal only', { version: dnd5eVersion });
         }
         Logger.info('D&D 5e spell hooks registered', { version: dnd5eVersion, major });
     }
@@ -130,44 +152,69 @@ export class SpellEffectCollector {
      */
     _registerDnd5eV5Hooks() {
         // 1. Pre-roll: Apply advantage/disadvantage/bonus to attack rolls
-        Hooks.on('dnd5e.preRollAttack', (...args) => {
-            const config = args[0];
-            const dialog = args[1];
-            const message = args[2];
-            return this._onDnd5ePreRollAttack(config, dialog, message);
-        });
+        try {
+            Hooks.on('dnd5e.preRollAttack', (...args) => {
+                const config = args[0];
+                const dialog = args[1];
+                const message = args[2];
+                return this._onDnd5ePreRollAttack(config, dialog, message);
+            });
+        }
+        catch (err) {
+            Logger.warn('Failed to register dnd5e.preRollAttack hook, falling back to universal', err);
+        }
         // 2. Also hook damage rolls for bonus/penalty on damage
-        Hooks.on('dnd5e.preRollDamage', (...args) => {
-            const config = args[0];
-            const dialog = args[1];
-            const message = args[2];
-            return this._onDnd5ePreRollDamage(config, dialog, message);
-        });
+        try {
+            Hooks.on('dnd5e.preRollDamage', (...args) => {
+                const config = args[0];
+                const dialog = args[1];
+                const message = args[2];
+                return this._onDnd5ePreRollDamage(config, dialog, message);
+            });
+        }
+        catch (err) {
+            Logger.warn('Failed to register dnd5e.preRollDamage hook', err);
+        }
         // 3. Post-use: Consume the flag after the spell activity completes
-        Hooks.on('dnd5e.postUseActivity', (...args) => {
-            const activity = args[0];
-            const usageConfig = args[1];
-            const results = args[2];
-            void this._onDnd5ePostUseActivity(activity, usageConfig, results);
-        });
+        try {
+            Hooks.on('dnd5e.postUseActivity', (...args) => {
+                const activity = args[0];
+                const usageConfig = args[1];
+                const results = args[2];
+                void this._onDnd5ePostUseActivity(activity, usageConfig, results);
+            });
+        }
+        catch (err) {
+            Logger.warn('Failed to register dnd5e.postUseActivity hook', err);
+        }
         Logger.info('D&D 5e v5.x hooks registered (preRollAttack + postUseActivity)');
     }
     /**
      * dnd5e 4.x legacy hooks — preUseItem / useItem
      */
     _registerDnd5eV4Hooks() {
-        Hooks.on('dnd5e.preUseItem', (...args) => {
-            const item = args[0];
-            const config = args[1];
-            const options = args[2];
-            return this._onDnd5eLegacyPreUseItem(item, config, options);
-        });
-        Hooks.on('dnd5e.useItem', (...args) => {
-            const item = args[0];
-            const config = args[1];
-            const options = args[2];
-            void this._onDnd5eLegacyUseItem(item, config, options);
-        });
+        try {
+            Hooks.on('dnd5e.preUseItem', (...args) => {
+                const item = args[0];
+                const config = args[1];
+                const options = args[2];
+                return this._onDnd5eLegacyPreUseItem(item, config, options);
+            });
+        }
+        catch (err) {
+            Logger.warn('Failed to register dnd5e.preUseItem hook (may be removed in v5.x)', err);
+        }
+        try {
+            Hooks.on('dnd5e.useItem', (...args) => {
+                const item = args[0];
+                const config = args[1];
+                const options = args[2];
+                void this._onDnd5eLegacyUseItem(item, config, options);
+            });
+        }
+        catch (err) {
+            Logger.warn('Failed to register dnd5e.useItem hook (may be removed in v5.x)', err);
+        }
         Logger.info('D&D 5e v4.x legacy hooks registered (preUseItem + useItem)');
     }
     // ----------------------------------------
@@ -347,11 +394,16 @@ export class SpellEffectCollector {
      * Post-use consumption is handled by the universal chat hook.
      */
     registerPf2eHooks() {
-        Hooks.on('pf2e.preRollCheck', (...args) => {
-            const roll = args[0];
-            const context = args[1];
-            return this._onPf2ePreRollCheck(roll, context);
-        });
+        try {
+            Hooks.on('pf2e.preRollCheck', (...args) => {
+                const roll = args[0];
+                const context = args[1];
+                return this._onPf2ePreRollCheck(roll, context);
+            });
+        }
+        catch (err) {
+            Logger.warn('Failed to register pf2e.preRollCheck hook, falling back to universal', err);
+        }
         Logger.info('PF2e spell hooks registered (preRollCheck)');
     }
     /**
@@ -394,47 +446,51 @@ export class SpellEffectCollector {
      * WFRP4e uses d100 tests. Advantage/disadvantage are mapped to ±20 (fortune/misfortune).
      */
     registerWfrp4eHooks() {
-        Hooks.on('wfrp4e.rollTest', (...args) => {
-            const testData = args[0];
-            const _cardOptions = args[1];
-            const item = testData.item;
-            if (!item)
-                return;
-            const spellTypes = this._getSpellItemTypes();
-            if (!spellTypes.includes(item.type))
-                return;
-            const effect = item.getFlag(MODULE_ID, FLAG_KEY);
-            if (!effect)
-                return;
-            Logger.info('WFRP4e: Applying Tumulte effect to test', {
-                spellName: item.name,
-                effectType: effect.type,
+        try {
+            Hooks.on('wfrp4e.rollTest', (...args) => {
+                const testData = args[0];
+                const _cardOptions = args[1];
+                const item = testData.item;
+                if (!item)
+                    return;
+                const spellTypes = this._getSpellItemTypes();
+                if (!spellTypes.includes(item.type))
+                    return;
+                const effect = item.getFlag(MODULE_ID, FLAG_KEY);
+                if (!effect)
+                    return;
+                Logger.info('WFRP4e: Applying Tumulte effect to test', {
+                    spellName: item.name,
+                    effectType: effect.type,
+                });
+                // Apply numeric bonus/penalty to testModifier
+                if (effect.type === 'buff') {
+                    if (effect.buffType === 'bonus' && effect.bonusValue) {
+                        testData.testModifier = (testData.testModifier || 0) + effect.bonusValue;
+                    }
+                    else if (effect.buffType === 'advantage') {
+                        testData.testModifier = (testData.testModifier || 0) + 20;
+                    }
+                }
+                else if (effect.type === 'debuff') {
+                    if (effect.debuffType === 'penalty' && effect.penaltyValue) {
+                        testData.testModifier = (testData.testModifier || 0) - effect.penaltyValue;
+                    }
+                    else if (effect.debuffType === 'disadvantage') {
+                        testData.testModifier = (testData.testModifier || 0) - 20;
+                    }
+                }
+                // Mark for consumption by the universal chat hook
+                this._pendingConsumption.set(item.id, { effect, itemName: item.name, itemImg: item.img });
+                Logger.info('WFRP4e: Tumulte modifier applied', {
+                    spellName: item.name,
+                    finalModifier: testData.testModifier,
+                });
             });
-            // Apply numeric bonus/penalty to testModifier
-            if (effect.type === 'buff') {
-                if (effect.buffType === 'bonus' && effect.bonusValue) {
-                    testData.testModifier = (testData.testModifier || 0) + effect.bonusValue;
-                }
-                else if (effect.buffType === 'advantage') {
-                    // WFRP4e convention: fortune/misfortune is ±20
-                    testData.testModifier = (testData.testModifier || 0) + 20;
-                }
-            }
-            else if (effect.type === 'debuff') {
-                if (effect.debuffType === 'penalty' && effect.penaltyValue) {
-                    testData.testModifier = (testData.testModifier || 0) - effect.penaltyValue;
-                }
-                else if (effect.debuffType === 'disadvantage') {
-                    testData.testModifier = (testData.testModifier || 0) - 20;
-                }
-            }
-            // Mark for consumption by the universal chat hook
-            this._pendingConsumption.set(item.id, { effect, itemName: item.name, itemImg: item.img });
-            Logger.info('WFRP4e: Tumulte modifier applied', {
-                spellName: item.name,
-                finalModifier: testData.testModifier,
-            });
-        });
+        }
+        catch (err) {
+            Logger.warn('Failed to register wfrp4e.rollTest hook, falling back to universal', err);
+        }
         Logger.info('WFRP4e spell hooks registered (rollTest)');
     }
     // ========================================
@@ -472,7 +528,7 @@ export class SpellEffectCollector {
         // Check if item has a Tumulte spell effect flag
         const effect = item.getFlag(MODULE_ID, FLAG_KEY);
         if (!effect) {
-            // Check pending consumption (from pre-roll hooks like pf2e/wfrp4e)
+            // Check pending consumption (from pre-roll hooks like dnd5e/pf2e/wfrp4e)
             if (this._pendingConsumption.has(item.id)) {
                 const pending = this._pendingConsumption.get(item.id);
                 this._pendingConsumption.delete(item.id);
@@ -481,6 +537,12 @@ export class SpellEffectCollector {
                 await this._sendConsumptionMessage(item, pending.effect);
                 this._notifyBackend(item, pending.effect);
             }
+            return;
+        }
+        // For dnd5e: if the item is already pending via system hooks (preRollAttack/postUseActivity),
+        // skip here — the system hooks will handle consumption properly
+        if (this.systemId === 'dnd5e' && this._pendingConsumption.has(item.id)) {
+            Logger.debug('Universal hook: skipping dnd5e item already pending via system hooks');
             return;
         }
         const hasPreRollSupport = PRE_ROLL_SYSTEMS.includes(this.systemId);
@@ -605,7 +667,7 @@ export class SpellEffectCollector {
                 return coreItemId;
             // System-specific flags (each system stores item refs differently)
             const flags = message.flags || {};
-            // dnd5e
+            // dnd5e (v4.x → v5.x fallback chain)
             const dnd5eFlags = flags['dnd5e'];
             const dnd5eUse = dnd5eFlags?.['use'];
             if (dnd5eUse?.['itemId'])
@@ -613,6 +675,18 @@ export class SpellEffectCollector {
             const dnd5eItem = dnd5eFlags?.['item'];
             if (dnd5eItem?.['id'])
                 return dnd5eItem['id'];
+            // v5.x: activity-based resolution
+            const dnd5eActivity = dnd5eFlags?.['activity'];
+            if (dnd5eActivity?.['itemId'])
+                return dnd5eActivity['itemId'];
+            // v5.x: UUID resolution from use.itemUuid
+            const itemUuid = dnd5eUse?.['itemUuid'];
+            if (itemUuid) {
+                const uuidParts = itemUuid.split('.');
+                const itemIdx = uuidParts.indexOf('Item');
+                if (itemIdx >= 0 && uuidParts[itemIdx + 1])
+                    return uuidParts[itemIdx + 1];
+            }
             // pf2e: origin UUID like "Actor.xxx.Item.yyy"
             const pf2eFlags = flags['pf2e'];
             const pf2eOrigin = pf2eFlags?.['origin'];
