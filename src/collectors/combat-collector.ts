@@ -573,10 +573,15 @@ export class CombatCollector {
       return { current: vtmHealth.value ?? 0, max: vtmHealth.max ?? 0, temp: 0 }
     }
 
-    // KULT (system.wounds — serious wounds counter, max 4 before critical)
-    const kultWounds = s.wounds as { serious?: number; critical?: boolean } | undefined
-    if (kultWounds?.serious !== undefined) {
-      return { current: 4 - (kultWounds.serious ?? 0), max: 4, temp: 0 }
+    // KULT (majorwound1-4 are individual slots with state "none" or filled)
+    const mw1 = s.majorwound1 as { state?: string } | undefined
+    if (mw1 !== undefined) {
+      let woundCount = 0
+      for (let i = 1; i <= 4; i++) {
+        const mw = s[`majorwound${i}`] as { state?: string } | undefined
+        if (mw?.state && mw.state !== 'none') woundCount++
+      }
+      return { current: 4 - woundCount, max: 4, temp: 0 }
     }
 
     // Blades in the Dark (system.stress — proxy HP)
@@ -603,16 +608,21 @@ export class CombatCollector {
       }
     }
 
-    // City of Mist (Dangers: statuses as proxy HP — count active statuses tier)
-    const comStatuses = s.statuses as Array<{ tier?: number }> | undefined
-    if (comStatuses && Array.isArray(comStatuses)) {
+    // City of Mist (Dangers: statuses via actor methods, not system fields)
+    const comActor = actor as unknown as {
+      my_statuses?: Array<{ system?: { tier?: number } }>
+      my_spectrums?: Array<unknown>
+    }
+    if (typeof comActor.my_statuses !== 'undefined') {
+      const statuses = comActor.my_statuses ?? []
       let maxTier = 0
-      for (const st of comStatuses) {
-        if (typeof st.tier === 'number' && st.tier > maxTier) maxTier = st.tier
+      for (const st of statuses) {
+        const tier = st.system?.tier
+        if (typeof tier === 'number' && tier > maxTier) maxTier = tier
       }
-      // Spectrum is typically 4-5 tiers for Dangers; use 5 as default max
-      const spectrum = (s.spectrum as number) ?? 5
-      return { current: spectrum - maxTier, max: spectrum, temp: 0 }
+      const spectrumCount = comActor.my_spectrums?.length ?? 0
+      const maxSpectrum = spectrumCount > 0 ? 5 : 5
+      return { current: maxSpectrum - maxTier, max: maxSpectrum, temp: 0 }
     }
 
     return null

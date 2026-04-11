@@ -1487,26 +1487,34 @@ export class TumulteSocketClient extends EventTarget {
                 break;
             }
             case 'k4lt': {
-                // KULT: Toggle a Condition on the actor
+                // KULT: Conditions are at system root (system.conditionAngry, not system.conditions.conditionAngry)
                 if (effectType === 'buff') {
-                    // Rage → set Angry condition
-                    await actor.update({ 'system.conditions.conditionAngry.state': 'active' });
+                    await actor.update({ 'system.conditionAngry.state': 'active' });
                 }
                 else {
-                    // Vulnerability → set Scared condition
-                    await actor.update({ 'system.conditions.conditionScared.state': 'active' });
+                    await actor.update({ 'system.conditionScared.state': 'active' });
                 }
                 Logger.info('KULT Condition applied', { effectType, condition: effectType === 'buff' ? 'Angry' : 'Scared' });
                 break;
             }
             case 'city-of-mist': {
-                // City of Mist: Store narrative effect as flags (Tags/Statuses are complex objects
-                // managed by the system's sheet — we store intent and let the sheet interpret it)
-                const tagData = effectType === 'buff'
-                    ? { name: 'Enragé', type: 'positive', tier: 0 }
-                    : { name: 'Vulnérable', type: 'negative', tier: 2 };
-                await actor.setFlag(MODULE_ID, 'narrativeEffect', tagData);
-                Logger.info('City of Mist narrative effect stored', { effectType, tagData });
+                // City of Mist: Use native API (createStoryTag, addOrCreateStatus)
+                // The actor class exposes these methods directly
+                const comActor = actor;
+                if (effectType === 'buff') {
+                    // Rage: create a positive Story Tag on the Danger
+                    if (typeof comActor.createStoryTag === 'function') {
+                        await comActor.createStoryTag('Enragé', true, { temporary: true });
+                        Logger.info('City of Mist: Story Tag "Enragé" created on Danger');
+                    }
+                }
+                else {
+                    // Vulnerability: impose a tier 2 status on the Danger
+                    if (typeof comActor.addOrCreateStatus === 'function') {
+                        await comActor.addOrCreateStatus('Vulnérable', { tier: 2 });
+                        Logger.info('City of Mist: Status "Vulnérable" tier 2 imposed on Danger');
+                    }
+                }
                 break;
             }
         }

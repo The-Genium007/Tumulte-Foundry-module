@@ -144,8 +144,8 @@ const SPELL_ITEM_TYPES: Record<string, string[]> = {
   'tor2e': ['spell'],
   'mothership': ['spell'],
   // --- Tier 1 expansion (v2.4.0) ---
-  'k4lt': ['advantage', 'capability', 'action'],
-  'city-of-mist': ['tag', 'theme', 'improvement'],
+  'k4lt': ['move'],
+  'city-of-mist': ['tag', 'theme'],
 }
 
 /** Systems that have native pre-roll hook support */

@@ -2832,36 +2832,52 @@ class KultAdapter extends GenericAdapter {
     if (!actor?.system) return super.extractStats(actor)
 
     const s = actor.system
+    // KULT stores stability.value as STRING, attributes as STRINGS at root
+    const stabilityRaw = sys(s, 'stability.value')
+    const stability = typeof stabilityRaw === 'string' ? parseInt(stabilityRaw, 10) || 0 : (typeof stabilityRaw === 'number' ? stabilityRaw : 0)
+
+    // Count major wounds (majorwound1-4 are individual slots with state "none" or filled)
+    let seriousWounds = 0
+    for (let i = 1; i <= 4; i++) {
+      const wound = sys(s, `majorwound${i}`) as { state?: string } | undefined
+      if (wound?.state && wound.state !== 'none') seriousWounds++
+    }
+    const criticalWound = sys(s, 'criticalwound') as { state?: string } | undefined
+
     return {
       name: actor.name,
       type: actor.type,
-      stability: sysFirstNum(s, 0, 'stability.value', 'stability'),
-      seriousWounds: sysFirstNum(s, 0, 'wounds.serious', 'seriousWounds'),
-      criticalWound: sysFirstBool(s, false, 'wounds.critical', 'criticalWound'),
+      stability,
+      seriousWounds,
+      criticalWound: criticalWound?.state !== undefined && criticalWound.state !== 'none',
       attributes: this._extractKultAttributes(s),
     }
   }
 
   private _extractKultAttributes(system: Record<string, unknown>): Record<string, number> {
     const attrs: Record<string, number> = {}
+    // KULT stores attributes as STRING values directly (e.g. "2", "-1", "0")
+    const raw = sys(system, 'attributes') as Record<string, string | number> | undefined
+    if (!raw) return attrs
     const attrList = ['willpower', 'reason', 'intuition', 'charisma', 'coolness', 'violence', 'perception', 'soul', 'fortitude', 'reflexes']
     for (const attr of attrList) {
-      attrs[attr] = sysFirstNum(system, 0, `attributes.${attr}.value`, `attributes.${attr}`)
+      const val = raw[attr]
+      attrs[attr] = typeof val === 'number' ? val : (typeof val === 'string' ? parseInt(val, 10) || 0 : 0)
     }
     return attrs
   }
 
-  // KULT: Advantages and Capabilities are the "spells" equivalent
+  // KULT: Moves are the only item type — they serve as "spells" (buff/debuff targets)
   override extractSpells(actor: FoundryActor): ExtractedSpell[] {
     if (!actor?.items) return []
 
     return actor.items
-      .filter(item => ['advantage', 'capability'].includes(item.type))
+      .filter(item => item.type === 'move')
       .map(item => ({
         id: item.id,
         name: item.name,
         img: item.img || null,
-        type: item.type,
+        type: 'move',
         level: null,
         school: null,
         prepared: null,
@@ -2869,19 +2885,30 @@ class KultAdapter extends GenericAdapter {
       }))
   }
 
+  // KULT: Disadvantages are stored in system.disadvantages array, not as items
   override extractFeatures(actor: FoundryActor): ExtractedFeature[] {
-    if (!actor?.items) return []
+    const features: ExtractedFeature[] = []
+    const s = actor?.system
+    if (!s) return features
 
-    return actor.items
-      .filter(item => ['disadvantage', 'darkSecret', 'limitation'].includes(item.type))
-      .map(item => ({
-        id: item.id,
-        name: item.name,
-        img: item.img || null,
-        type: item.type,
-        subtype: null,
-        uses: null,
-      }))
+    // Disadvantages from the system array
+    const disadvArray = sys(s, 'disadvantagearray') as Array<{ name?: string }> | undefined
+    if (disadvArray && Array.isArray(disadvArray)) {
+      for (const d of disadvArray) {
+        if (d.name) {
+          features.push({
+            id: d.name,
+            name: d.name,
+            img: null,
+            type: 'disadvantage',
+            subtype: null,
+            uses: null,
+          })
+        }
+      }
+    }
+
+    return features
   }
 }
 
@@ -2975,60 +3002,64 @@ class CityOfMistAdapter extends GenericAdapter {
     if (!actor?.system) return super.extractStats(actor)
 
     const s = actor.system
+    // City of Mist actors expose statuses/spectrums via methods, not system fields
+    const actorAny = actor as unknown as {
+      my_statuses?: Array<{ name: string; system?: { tier?: number; pips?: number } }>
+      my_spectrums?: Array<{ name: string; system?: Record<string, unknown> }>
+    }
+    const statuses = actorAny.my_statuses ?? []
+    const spectrums = actorAny.my_spectrums ?? []
+    let maxTier = 0
+    for (const status of statuses) {
+      const tier = status.system?.tier
+      if (typeof tier === 'number' && tier > maxTier) maxTier = tier
+    }
+
     return {
       name: actor.name,
       type: actor.type,
-      // Dangers have spectrums, characters don't
-      spectrum: sys(s, 'spectrum') || null,
-      // Count active statuses and their tiers
-      activeStatuses: this._countStatuses(actor),
+      mythos: sysStr(s, 'mythos'),
+      logos: sysStr(s, 'logos'),
+      essence: sysStr(s, 'essence'),
+      spectrumCount: spectrums.length,
+      statusCount: statuses.length,
+      maxStatusTier: maxTier,
     }
   }
 
-  private _countStatuses(actor: FoundryActor): { count: number; maxTier: number } {
-    // Attempt to read statuses from actor data
-    const statuses = sys(actor.system, 'statuses') as Array<{ tier?: number }> | undefined
-    if (!statuses || !Array.isArray(statuses)) return { count: 0, maxTier: 0 }
-    let maxTier = 0
-    for (const status of statuses) {
-      if (typeof status.tier === 'number' && status.tier > maxTier) maxTier = status.tier
-    }
-    return { count: statuses.length, maxTier }
-  }
-
-  // City of Mist: no traditional spells, but Mythos themes are the power source
-  // Tags on themes act as the "spell" equivalent
+  // City of Mist: Tags (power/weakness/story) and Themes are the "spells"
   override extractSpells(actor: FoundryActor): ExtractedSpell[] {
     if (!actor?.items) return []
 
     return actor.items
-      .filter(item => ['tag', 'theme', 'improvement'].includes(item.type))
-      .map(item => ({
-        id: item.id,
-        name: item.name,
-        img: item.img || null,
-        type: item.type,
-        level: null,
-        school: sysFirstStr(item.system, '', 'themeType', 'type') || null,
-        prepared: null,
-        uses: sysFirst(item.system, 'uses') ? {
-          value: sysFirstNum(item.system, 0, 'uses.value', 'uses.current') as number | null,
-          max: sysFirstNum(item.system, 0, 'uses.max') as number | null,
-        } : null,
-      }))
+      .filter(item => ['tag', 'theme'].includes(item.type))
+      .map(item => {
+        const s = item.system
+        return {
+          id: item.id,
+          name: item.name,
+          img: item.img || null,
+          type: item.type,
+          level: null,
+          school: sysFirstStr(s, '', 'subtype', 'themebook_name') || null,
+          prepared: sysFirst(s, 'burned') === false ? true : null,
+          uses: null,
+        }
+      })
   }
 
+  // Features: GM moves, statuses, spectrums, juice, clues
   override extractFeatures(actor: FoundryActor): ExtractedFeature[] {
     if (!actor?.items) return []
 
     return actor.items
-      .filter(item => ['move', 'status'].includes(item.type))
+      .filter(item => ['gmmove', 'status', 'spectrum', 'juice', 'clue'].includes(item.type))
       .map(item => ({
         id: item.id,
         name: item.name,
         img: item.img || null,
         type: item.type,
-        subtype: sysFirstStr(item.system, '', 'moveType', 'category') || null,
+        subtype: sysFirstStr(item.system, '', 'subtype') || null,
         uses: null,
       }))
   }

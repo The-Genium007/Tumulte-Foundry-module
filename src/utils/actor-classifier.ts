@@ -574,8 +574,8 @@ const SYSTEM_ACTOR_CONFIG: Record<string, SystemActorConfig> = {
   // ============================================
   'city-of-mist': {
     pcTypes: ['character'],
-    npcTypes: ['extra', 'crew'],
-    monsterTypes: ['danger'],
+    npcTypes: ['crew'],
+    monsterTypes: ['threat'],
     excludedTypes: [],
     classifyNpcVsMonster: null
   },
@@ -584,7 +584,7 @@ const SYSTEM_ACTOR_CONFIG: Record<string, SystemActorConfig> = {
   // KULT: Divinity Lost
   // ============================================
   'k4lt': {
-    pcTypes: ['character'],
+    pcTypes: ['pc'],
     npcTypes: ['npc'],
     monsterTypes: ['npc'],
     excludedTypes: [],

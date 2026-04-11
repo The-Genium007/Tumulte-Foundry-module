@@ -58,8 +58,8 @@ const SPELL_ITEM_TYPES = {
     'tor2e': ['spell'],
     'mothership': ['spell'],
     // --- Tier 1 expansion (v2.4.0) ---
-    'k4lt': ['advantage', 'capability', 'action'],
-    'city-of-mist': ['tag', 'theme', 'improvement'],
+    'k4lt': ['move'],
+    'city-of-mist': ['tag', 'theme'],
 };
 /** Systems that have native pre-roll hook support */
 const PRE_ROLL_SYSTEMS = ['dnd5e', 'pf2e', 'wfrp4e'];
