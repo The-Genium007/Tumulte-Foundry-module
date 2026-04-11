@@ -582,11 +582,13 @@ const SYSTEM_ACTOR_CONFIG: Record<string, SystemActorConfig> = {
 
   // ============================================
   // KULT: Divinity Lost
+  // Kult has only 2 actor types: 'pc' (player characters) and 'npc' (all non-players).
+  // There is no separate monster type — monsters are NPCs in Kult.
   // ============================================
   'k4lt': {
     pcTypes: ['pc'],
     npcTypes: ['npc'],
-    monsterTypes: ['npc'],
+    monsterTypes: [],
     excludedTypes: [],
     classifyNpcVsMonster: null
   },
