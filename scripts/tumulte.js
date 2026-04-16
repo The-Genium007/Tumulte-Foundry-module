@@ -55,7 +55,7 @@ class TumulteIntegration {
         this.initialized = false;
         this.worldId = null;
         this.reauthorizationPollInterval = null;
-        const configuredUrl = '__TUMULTE_API_URL__';
+        const configuredUrl = 'https://api-staging.tumulte.app';
         this.buildUrl = configuredUrl.startsWith('__') ? null : configuredUrl;
         this.serverUrl = this.buildUrl || 'http://localhost:3333';
     }
